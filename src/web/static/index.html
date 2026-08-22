@@ -775,11 +775,21 @@ async function loadConfig() {
   applyConfig(cfg);
 }
 
+async function errorDetail(res) {
+  try {
+    const data = await res.json();
+    return data.detail || JSON.stringify(data);
+  } catch {
+    return await res.text();
+  }
+}
+
 async function preview() {
   const cfg = collectConfig();
+  document.getElementById("previewOutput").textContent = "Checking...";
   const res = await fetch("/api/dry-run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
   if (!res.ok) {
-    document.getElementById("previewOutput").textContent = "Error: " + await res.text();
+    document.getElementById("previewOutput").textContent = "Error: " + await errorDetail(res);
     return;
   }
   const data = await res.json();
@@ -789,9 +799,10 @@ async function preview() {
 
 async function startRun() {
   const cfg = collectConfig();
+  document.getElementById("statusMessage").textContent = "Starting...";
   const res = await fetch("/api/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
   if (!res.ok) {
-    document.getElementById("statusMessage").textContent = "Error: " + await res.text();
+    document.getElementById("statusMessage").textContent = "Error: " + await errorDetail(res);
     return;
   }
   document.getElementById("statusMessage").textContent = "";

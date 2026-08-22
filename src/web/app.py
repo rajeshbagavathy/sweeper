@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from src.sweep import TooManyCombinations
 from src.web.expand import expand_ui_config, load_ui_config, save_ui_config
 from src.web.models import SweepUIConfig
 from src.web.state import run_state
@@ -33,7 +34,10 @@ def post_config(cfg: SweepUIConfig) -> dict:
 
 @app.post("/api/dry-run")
 def dry_run(cfg: SweepUIConfig) -> dict:
-    combos = expand_ui_config(cfg)
+    try:
+        combos = expand_ui_config(cfg)
+    except TooManyCombinations as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"count": len(combos), "sample": combos[:10]}
 
 
@@ -42,6 +46,8 @@ def start_run(cfg: SweepUIConfig) -> dict:
     save_ui_config(cfg)
     try:
         run_state.start(cfg)
+    except TooManyCombinations as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True}

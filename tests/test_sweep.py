@@ -8,7 +8,7 @@ import pytest
 from src.config import SweepConfig
 from src.results import parse_number
 from src.store import append_row, build_fieldnames, combo_id, flatten, load_existing
-from src.sweep import expand, keep_combination
+from src.sweep import MAX_COMBINATIONS, TooManyCombinations, expand, keep_combination
 
 
 def _sweep(**overrides) -> SweepConfig:
@@ -64,6 +64,21 @@ def test_expand_end_to_end_with_exclude():
     combos = expand(sweep)
     assert len(combos) == 1
     assert combos[0]["target_pct"] == 50
+
+
+def test_expand_raises_before_hanging_on_huge_configs():
+    """A config whose raw Cartesian product blows past MAX_COMBINATIONS must fail
+    fast with a clear error, not hang trying to materialize a giant list - this is
+    exactly what happened with a real over-ranged web UI config."""
+    huge = _sweep(vary={"a": list(range(1000)), "b": list(range(1000))})  # 1,000,000 raw
+    with pytest.raises(TooManyCombinations):
+        expand(huge)
+
+
+def test_expand_allows_exactly_at_the_cap():
+    at_cap = _sweep(vary={"a": list(range(MAX_COMBINATIONS)), "b": [1]})
+    combos = expand(at_cap)
+    assert len(combos) == MAX_COMBINATIONS
 
 
 def test_combo_id_stable_regardless_of_key_order():

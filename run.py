@@ -22,7 +22,7 @@ from src import browser, store
 from src.auth import LoginNotConfigured, is_logged_in
 from src.config import load_selectors, load_sweep
 from src.runner import run_sweep
-from src.sweep import expand
+from src.sweep import TooManyCombinations, expand
 
 ROOT = Path(__file__).resolve().parent
 SELECTORS_PATH = ROOT / "config" / "selectors.yaml"
@@ -51,7 +51,11 @@ def main() -> int:
     sweep_config = load_sweep(SWEEP_PATH)
     if args.limit is not None:
         sweep_config.limit = args.limit
-    combos = expand(sweep_config)
+    try:
+        combos = expand(sweep_config)
+    except TooManyCombinations as exc:
+        print(f"Cannot proceed: {exc}", file=sys.stderr)
+        return 1
 
     if args.dry_run:
         print(f"{len(combos)} combination(s) after exclude/shuffle/limit.\n")
