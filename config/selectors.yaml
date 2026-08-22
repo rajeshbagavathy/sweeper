@@ -1,61 +1,86 @@
 # AlgoTest UI selectors.
 #
-# Fill in every blank value below using the Playwright Inspector's element picker
-# (run `uv run python tools/record.py`, then click "Pick locator" in the Inspector
-# toolbar and click the corresponding element on the page).
+# HOW THIS FILE WAS FILLED IN: instead of you manually using the Playwright Inspector's
+# element picker, Claude inspected your live, already-logged-in algotest.in session
+# directly (via the Claude in Chrome browser extension) and read the actual DOM to derive
+# these selectors. Most of them are backed by the app's own stable ids / data-test-id
+# attributes rather than guesses. A few fields are marked NEEDS-CHECK below because they
+# genuinely couldn't be verified without disrupting your session (e.g. the login form,
+# since you were already logged in) or without deliberately causing an error. Please do a
+# quick pass on those before Phase 1 starts.
 #
-# Each value can be either:
-#   - a raw Playwright selector string, e.g. "#email" or "text=Run Backtest"
-#   - a role-based locator object, e.g. {role: button, name: "Run Backtest"}
-# Prefer the role-based form wherever the Inspector suggests a get_by_role /
-# get_by_label / get_by_text locator — it survives AlgoTest's generated React class
-# names far better than a raw CSS selector chain.
+# Format: every value is a raw Playwright/CSS selector string that Playwright can consume
+# directly via page.locator(...). Attribute selectors with spaces are quoted, e.g.
+# [id="OverallStop Loss_overall-stoploss_input1"].
 
 login:
-  email_input:
+  # NEEDS-CHECK: you log in with a PHONE NUMBER, not email, and you were already logged
+  # in when this file was generated, so the actual login form was never inspected live.
+  # Log out once and run tools/record.py (or open /login manually) to pick these up, or
+  # just tell Claude when you're logged out and it can inspect it directly.
+  email_input:             # actually your phone-number input
   password_input:
   submit_button:
-  logged_in_marker:      # something only present after successful login
+  logged_in_marker: "header:has-text(\"Credits Available\")"   # confirmed: only rendered once logged in
 
 builder:
-  url:
-  instrument_select:     # NIFTY / BANKNIFTY / SENSEX
-  start_date_input:
-  end_date_input:
-  # --- per-leg controls (the app will index these for leg 1..N) ---
-  add_leg_button:
-  leg_row:               # repeating container; app uses .nth(i)
-  leg_action:            # Buy / Sell
-  leg_option_type:       # CE / PE
-  leg_strike_selector:   # ATM, ATM+100, etc.
-  leg_lots:
+  url: "https://algotest.in/backtest"
+  instrument_select: "#underlying-selector"   # click this, then click the option (e.g. role=option \"BANKNIFTY\") in the popup listbox that opens
+  start_date_input: "#strategy-date-input div:has(> label:text-is(\"Start Date\")) input[type=\"date\"]"
+  end_date_input: "#strategy-date-input div:has(> label:text-is(\"End Date\")) input[type=\"date\"]"
+
+  # --- per-leg controls ---
+  # Confirmed: each leg you add gets a real, predictable container id: #backtest-leg-1,
+  # #backtest-leg-2, etc. (1-indexed). Scope every per-leg selector below inside
+  # "#backtest-leg-{n}" — no need for a generic .nth(i) index.
+  add_leg_button: "button:text-is(\"Add Leg\")"
+  leg_row: "#backtest-leg-{n}"          # app should format {n} = 1, 2, 3... per leg
+  leg_action: "#select_Position select"        # Buy/Sell — scope inside leg_row
+  leg_option_type: "#select_OptionType select" # Call/Put — scope inside leg_row
+  leg_strike_selector: "#select_ select"       # the ATM/ITM/OTM offset dropdown — scope inside leg_row.
+                                                # NOTE: the app also has a confusingly-similar
+                                                # "#select_StrikeType" dropdown inside each leg row,
+                                                # but that one is "Select Strike Criteria" (Round
+                                                # Strikes / Premium Range / etc.), not this field.
+  leg_lots: "input[type=\"number\"]"           # first number input inside leg_row (labeled "Lots") — use .first, scope inside leg_row
+
   # --- entry / exit ---
-  entry_time_input:
-  exit_time_input:
-  # --- risk management ---
-  stoploss_type:
-  stoploss_value:
-  target_type:
-  target_value:
-  trail_sl_toggle:
-  trail_sl_x:
-  trail_sl_y:
-  reentry_type:
-  reentry_count:
-  # --- run ---
-  run_backtest_button:
+  entry_time_input: "div:has(> label:text-is(\"Entry Time\")) input[type=\"time\"]"
+  exit_time_input: "div:has(> label:text-is(\"Exit Time\")) input[type=\"time\"]"
+
+  # --- risk management (these are the OVERALL/global settings, not per-leg) ---
+  stoploss_type: "#overall-stoploss select"                              # Max Loss / Total Premium %
+  stoploss_value: "[id=\"OverallStop Loss_overall-stoploss_input1\"]"
+  target_type: "#overall-target select"                                  # Max Profit / Total Premium %
+  target_value: "[id=\"OverallTarget_overall-target_input1\"]"
+  trail_sl_toggle: "[data-test-id=\"toggle-handle_Trailing Options_trailing-options\"]"
+  trail_sl_x: "[id=\"TrailingOptions_trailing-options_input1\"]"         # "If profit reaches"
+  trail_sl_y: "[id=\"TrailingOptions_trailing-options_input2\"]"         # "Lock profit"
+  # NEEDS-CHECK: reentry_count only renders as a real <input> once its toggle is switched
+  # on (before that it's static, non-interactive text). Toggle "Overall Re-entry on SL" on
+  # in the UI once and confirm this still finds it.
+  reentry_type: "div:has(label[for=\"handle_rentry_undefined_Overall Re-entry on SL\"]) select"
+  reentry_count: "div:has(label[for=\"handle_rentry_undefined_Overall Re-entry on SL\"]) input"
+  # (there is a second, separate re-entry config for the Target side, same pattern with
+  # "handle_rentry_undefined_Overall Re-entry on Tgt" — not in the original field list but
+  # worth knowing about if you want to sweep it too)
+
+  run_backtest_button: "button:has-text(\"Start Backtest\")"
 
 results:
-  ready_marker:          # element that only appears when results are rendered
-  running_marker:        # spinner / "running" indicator, to wait for disappearance
-  error_marker:          # error toast or message
-  metrics:               # label -> selector for each metric on the results panel
-    total_pnl:
-    max_drawdown:
-    win_rate:
-    total_trades:
-    avg_profit_per_trade:
-    avg_loss_per_trade:
-    max_profit:
-    max_loss:
-    expectancy:
+  ready_marker: "h5:text-is(\"BACKTEST RESULT\")"          # confirmed: appears once results render
+  running_marker: "button:has-text(\"Running Backtest\")"  # confirmed: the run button's own label while in progress
+  # NEEDS-CHECK: no error was ever produced during discovery (the one submitted backtest
+  # succeeded), so this is an educated guess, not a confirmed selector. Please cause one
+  # real error (e.g. temporarily set an invalid date range) and check what appears.
+  error_marker: "[role=\"alert\"], [class*=\"toast\"]"
+  metrics:                    # confirmed: label -> value pairs in a 3-column results table
+    total_pnl: "tr:has-text(\"Overall Profit\") td:nth-child(2)"
+    max_drawdown: "tr:has-text(\"Max Drawdown\"):not(:has-text(\"Duration\")) td:nth-child(2)"  # excludes the separate "Duration of Max Drawdown" row, which also contains this substring
+    win_rate: "tr:has-text(\"Win %\") td:nth-child(2)"
+    total_trades: "tr:has-text(\"No. of Trades\") td:nth-child(2)"
+    avg_profit_per_trade: "tr:has-text(\"Average Profit per Trade\") td:nth-child(2)"
+    avg_loss_per_trade: "tr:has-text(\"Average Loss on Losing Trades\") td:nth-child(2)"
+    max_profit: "tr:has-text(\"Max Profit in Single Trade\") td:nth-child(2)"
+    max_loss: "tr:has-text(\"Max Loss in Single Trade\") td:nth-child(2)"
+    expectancy: "tr:has-text(\"Expectancy Ratio\") td:nth-child(2)"
