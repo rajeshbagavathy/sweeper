@@ -33,6 +33,16 @@ class BuilderSelectors:
     leg_strike_premium_upper: SelectorValue
     leg_strike_premium_value: SelectorValue
     leg_lots: SelectorValue
+    leg_target_toggle: SelectorValue
+    leg_target_type: SelectorValue
+    leg_target_value: SelectorValue
+    leg_stoploss_toggle: SelectorValue
+    leg_stoploss_type: SelectorValue
+    leg_stoploss_value: SelectorValue
+    leg_trail_toggle: SelectorValue
+    leg_trail_type: SelectorValue
+    leg_trail_x: SelectorValue
+    leg_trail_y: SelectorValue
     entry_time_input: SelectorValue
     exit_time_input: SelectorValue
     stoploss_toggle: SelectorValue
@@ -42,8 +52,11 @@ class BuilderSelectors:
     target_type: SelectorValue
     target_value: SelectorValue
     trail_sl_toggle: SelectorValue
+    trail_sl_mode: SelectorValue
     trail_sl_x: SelectorValue
     trail_sl_y: SelectorValue
+    trail_sl_step: SelectorValue
+    trail_sl_trail_by: SelectorValue
     reentry_type: SelectorValue
     reentry_count: SelectorValue
     run_backtest_button: SelectorValue

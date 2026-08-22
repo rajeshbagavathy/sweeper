@@ -53,6 +53,24 @@ builder:
   leg_strike_premium_upper: "label:text-is(\"Upper\") + div input[type=\"number\"]"   # "Premium Range" mode
   leg_strike_premium_value: "label:text-is(\"Premium\") + div input[type=\"number\"]" # "Closest Premium" mode
 
+  # --- per-leg risk management (Target Profit / Stop Loss / Trail SL) ---
+  # Each of these containers gets a random per-leg-instance suffix (e.g.
+  # "TargetProfit_jkdxyq71") that changes every time a leg is created - NOT stable
+  # across page loads, so scope by the stable id PREFIX instead, inside leg_row.
+  # Confirmed live: each container also has 2 extra selects (a "+/-" and a
+  # "points/% of range" pair) that are part of a collapsed/unused sub-feature; the
+  # visible type dropdown is always the *first* select in the container.
+  leg_target_toggle: "[data-test-id^=\"toggle-handle_Target Profit_\"]"
+  leg_target_type: "[id^=\"TargetProfit_\"] select"          # .first - Percent (%) is what we want
+  leg_target_value: "[id^=\"TargetProfit_\"][id$=\"_input\"]"
+  leg_stoploss_toggle: "[data-test-id^=\"toggle-handle_Stop Loss_\"]"
+  leg_stoploss_type: "[id^=\"StopLoss_\"] select"             # .first - Percent (%)
+  leg_stoploss_value: "[id^=\"StopLoss_\"][id$=\"_input\"]"
+  leg_trail_toggle: "[data-test-id^=\"toggle-handle_Trail SL_\"]"
+  leg_trail_type: "[id^=\"TrailSL_\"] select"                 # Points / Percentage / Delta (pts) / Delta (%)
+  leg_trail_x: "[id^=\"TrailSL_\"][id$=\"_input1\"]"
+  leg_trail_y: "[id^=\"TrailSL_\"][id$=\"_input2\"]"
+
   # --- entry / exit ---
   entry_time_input: "div:has(> label:text-is(\"Entry Time\")) input[type=\"time\"]"
   exit_time_input: "div:has(> label:text-is(\"Exit Time\")) input[type=\"time\"]"
@@ -69,13 +87,14 @@ builder:
   target_type: "#overall-target select"                                  # Max Profit / Total Premium %
   target_value: "[id=\"OverallTarget_overall-target_input1\"]"
   trail_sl_toggle: "[data-test-id=\"toggle-handle_Trailing Options_trailing-options\"]"
-  # Fixed during the Phase 1 smoke test: "TrailingOptions_trailing-options_input1/2" are
-  # only for the "Lock and Trail" / "Overall Trail SL" modes and stay display:none under
-  # the default "Lock" mode. These are the actually-visible fields for "Lock" mode -
-  # scoped by adjacent-sibling from each field's own label, since both inputs share the
-  # same generic id="number-input".
+  # "Lock and Trail" mode is what exposes all 4 of the fields we want (confirmed live -
+  # "Lock" alone only shows If profit reaches/Lock profit; "Overall Trail SL" shows a
+  # completely different MTM-based UI, not these fields at all).
+  trail_sl_mode: "[id=\"TrailingOptions_trailing-options\"] select"
   trail_sl_x: "label:text-is(\"If profit reaches\") + div input[type=\"number\"]"
   trail_sl_y: "label:text-is(\"Lock profit\") + div input[type=\"number\"]"
+  trail_sl_step: "label:text-is(\"For every increase in profit by\") + div input[type=\"number\"]"
+  trail_sl_trail_by: "label:text-is(\"Trail profit by\") + div input[type=\"number\"]"
   # NEEDS-CHECK: reentry_count only renders as a real <input> once its toggle is switched
   # on (before that it's static, non-interactive text). Toggle "Overall Re-entry on SL" on
   # in the UI once and confirm this still finds it.
