@@ -65,6 +65,13 @@ class SweepUIConfig(BaseModel):
     entry_time: TimeRange = Field(default_factory=lambda: TimeRange(start="09:20", end="10:15", interval_minutes=15))
     exit_time: TimeRange = Field(default_factory=lambda: TimeRange(start="15:10", end="15:15", interval_minutes=5))
 
+    # When linked_ce_pe is True (the common short-strangle/straddle case), shared_leg's
+    # action/lots/strike config is applied identically to a CE leg and a PE leg, and -
+    # importantly - that shared dimension only varies *once* in the combination math
+    # (see src/web/expand.py) rather than being cross-multiplied between two
+    # independently-varying legs. Uncheck to configure CE and PE independently via `legs`.
+    linked_ce_pe: bool = True
+    shared_leg: LegUIConfig = Field(default_factory=lambda: LegUIConfig(action="SELL"))
     legs: list[LegUIConfig] = Field(
         default_factory=lambda: [
             LegUIConfig(action="SELL", option_type="CE"),

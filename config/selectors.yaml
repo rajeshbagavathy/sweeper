@@ -104,3 +104,7 @@ results:
     max_profit: "tr:has-text(\"Max Profit in Single Trade\") td:nth-child(2)"
     max_loss: "tr:has-text(\"Max Loss in Single Trade\") td:nth-child(2)"
     expectancy: "tr:has-text(\"Expectancy Ratio\") td:nth-child(2)"
+    loss_rate: "tr:has-text(\"Loss %\") td:nth-child(2)"
+    avg_profit_winning_trades: "tr:has-text(\"Average Profit on Winning Trades\") td:nth-child(2)"
+    return_max_dd: "tr:has-text(\"Return/MaxDD\") td:nth-child(2)"
+    reward_risk_ratio: "tr:has-text(\"Reward to Risk Ratio\") td:nth-child(2)"

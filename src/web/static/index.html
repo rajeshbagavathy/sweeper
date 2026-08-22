@@ -117,6 +117,8 @@
   table { border-collapse: collapse; width: 100%; font-size: 12px; }
   th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; white-space: nowrap; }
   th { background: #f9fafb; position: sticky; top: 0; }
+  th.priority-col, td.priority-col { background: #fffbeb; }
+  th.priority-col { color: #92400e; }
   .table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
   #previewOutput, #dryRunOutput { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
   .exclude-box textarea { width: 100%; min-height: 50px; font-family: monospace; font-size: 12px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }
@@ -172,8 +174,22 @@
 
   <section class="card">
     <h2>Legs</h2>
-    <div id="legsContainer"></div>
-    <button class="secondary small" onclick="addLeg()">+ Add leg</button>
+    <label class="checkbox-row" style="margin-bottom:12px;">
+      <input type="checkbox" id="linked_ce_pe" checked onchange="onLinkedToggle()">
+      Use the same lots/strike configuration for both CE and PE
+    </label>
+    <p style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">
+      When checked, CE and PE mirror each other exactly and the shared range only
+      counts once toward the combination total. Uncheck to configure each side
+      independently (different action, lots, or strike per side).
+    </p>
+
+    <div id="sharedLegPanel"></div>
+
+    <div id="independentLegsPanel" class="hidden">
+      <div id="legsContainer"></div>
+      <button class="secondary small" onclick="addLeg()">+ Add leg</button>
+    </div>
   </section>
 
   <section class="card">
@@ -276,6 +292,12 @@
 const STRIKE_OFFSETS = ["ITM10","ITM9","ITM8","ITM7","ITM6","ITM5","ITM4","ITM3","ITM2","ITM1",
   "ATM","OTM1","OTM2","OTM3","OTM4","OTM5","OTM6","OTM7","OTM8","OTM9","OTM10"];
 
+// Order here doubles as the results-table priority order (see renderResults).
+const PRIORITY_METRICS = [
+  "return_max_dd", "reward_risk_ratio", "expectancy", "max_loss", "max_profit",
+  "avg_profit_winning_trades", "avg_loss_per_trade", "win_rate", "loss_rate",
+];
+
 let legCount = 0;
 let pollTimer = null;
 
@@ -293,12 +315,112 @@ function setRangeField(idPrefix, r) {
   if (document.getElementById(idPrefix + "_step")) document.getElementById(idPrefix + "_step").value = r.step;
 }
 
+// Lots + strike-mode fields, shared between a per-leg card and the single shared panel.
+// Fully self-contained (balanced divs) so callers can just drop this in.
+function strikeAndLotsFieldsHTML(prefix) {
+  const offsetOptions = STRIKE_OFFSETS.map(o => `<option value="${o}">${o}</option>`).join("");
+  return `
+  <div class="row">
+    <div class="range-group">
+      <strong style="font-size:12px;">Lots</strong>
+      <div class="field"><label>Min</label><input type="number" id="${prefix}_lots_min" value="1"></div>
+      <div class="field"><label>Max</label><input type="number" id="${prefix}_lots_max" value="1"></div>
+      <div class="field"><label>Step</label><input type="number" id="${prefix}_lots_step" value="1"></div>
+    </div>
+    <div class="field">
+      <label>Strike mode</label>
+      <select id="${prefix}_strike_mode" onchange="updateStrikeModeVisibility('${prefix}')">
+        <option value="offset">ATM / OTM / ITM offset</option>
+        <option value="premium_range">Premium range</option>
+        <option value="premium_closest">Closest premium</option>
+      </select>
+    </div>
+  </div>
+  <div class="strike-mode-body" id="${prefix}_offset_body">
+    <div class="field wide">
+      <label>Offsets (ctrl/cmd-click to select multiple)</label>
+      <select multiple id="${prefix}_offsets" size="6">${offsetOptions}</select>
+    </div>
+  </div>
+  <div class="strike-mode-body hidden" id="${prefix}_premium_range_body">
+    <div class="row">
+      <div class="range-group">
+        <strong style="font-size:12px;">Lower</strong>
+        <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_lower_min" value="30"></div>
+        <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_lower_max" value="30"></div>
+        <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_lower_step" value="5"></div>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">Upper</strong>
+        <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_upper_min" value="55"></div>
+        <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_upper_max" value="55"></div>
+        <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_upper_step" value="5"></div>
+      </div>
+    </div>
+  </div>
+  <div class="strike-mode-body hidden" id="${prefix}_premium_closest_body">
+    <div class="range-group">
+      <strong style="font-size:12px;">Premium</strong>
+      <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_value_min" value="30"></div>
+      <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_value_max" value="30"></div>
+      <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_value_step" value="5"></div>
+    </div>
+  </div>`;
+}
+
+function applyLegFields(prefix, legCfg) {
+  setRangeField(`${prefix}_lots`, legCfg.lots);
+  document.getElementById(`${prefix}_strike_mode`).value = legCfg.strike_mode;
+  if (legCfg.strike_mode === "offset") {
+    const sel = document.getElementById(`${prefix}_offsets`);
+    for (const opt of sel.options) opt.selected = legCfg.offsets.includes(opt.value);
+  } else if (legCfg.strike_mode === "premium_range") {
+    setRangeField(`${prefix}_premium_lower`, legCfg.premium_lower);
+    setRangeField(`${prefix}_premium_upper`, legCfg.premium_upper);
+  } else if (legCfg.strike_mode === "premium_closest") {
+    setRangeField(`${prefix}_premium_value`, legCfg.premium_value);
+  }
+  updateStrikeModeVisibility(prefix);
+}
+
+function collectLegFields(prefix) {
+  const mode = document.getElementById(`${prefix}_strike_mode`).value;
+  const leg = {
+    lots: rangeField(`${prefix}_lots`, {min:1,max:1,step:1}),
+    strike_mode: mode,
+    offsets: Array.from(document.getElementById(`${prefix}_offsets`).selectedOptions).map(o => o.value),
+    premium_lower: rangeField(`${prefix}_premium_lower`, {min:30,max:30,step:5}),
+    premium_upper: rangeField(`${prefix}_premium_upper`, {min:55,max:55,step:5}),
+    premium_value: rangeField(`${prefix}_premium_value`, {min:30,max:30,step:5}),
+  };
+  if (leg.strike_mode === "offset" && leg.offsets.length === 0) leg.offsets = ["ATM"];
+  return leg;
+}
+
+function updateStrikeModeVisibility(prefix) {
+  const mode = document.getElementById(`${prefix}_strike_mode`).value;
+  document.getElementById(`${prefix}_offset_body`).classList.toggle("hidden", mode !== "offset");
+  document.getElementById(`${prefix}_premium_range_body`).classList.toggle("hidden", mode !== "premium_range");
+  document.getElementById(`${prefix}_premium_closest_body`).classList.toggle("hidden", mode !== "premium_closest");
+}
+
+function buildSharedLegPanel() {
+  document.getElementById("sharedLegPanel").innerHTML = `
+  <div class="row">
+    <div class="field"><label>Action (both sides)</label>
+      <select id="shared_action"><option value="SELL">Sell</option><option value="BUY">Buy</option></select>
+    </div>
+  </div>
+  ${strikeAndLotsFieldsHTML("shared")}
+  `;
+}
+
 function addLeg(legCfg) {
   const i = legCount++;
   const div = document.createElement("div");
   div.className = "leg";
   div.id = "leg" + i;
-  const offsetOptions = STRIKE_OFFSETS.map(o => `<option value="${o}">${o}</option>`).join("");
+  const prefix = "leg" + i;
   div.innerHTML = `
     <div class="leg-header">
       <strong>Leg ${i + 1}</strong>
@@ -306,74 +428,20 @@ function addLeg(legCfg) {
     </div>
     <div class="row">
       <div class="field"><label>Action</label>
-        <select id="leg${i}_action"><option value="SELL">Sell</option><option value="BUY">Buy</option></select>
+        <select id="${prefix}_action"><option value="SELL">Sell</option><option value="BUY">Buy</option></select>
       </div>
       <div class="field"><label>Option type</label>
-        <select id="leg${i}_option_type"><option value="CE">Call</option><option value="PE">Put</option></select>
-      </div>
-      <div class="range-group">
-        <strong style="font-size:12px;">Lots</strong>
-        <div class="field"><label>Min</label><input type="number" id="leg${i}_lots_min" value="1"></div>
-        <div class="field"><label>Max</label><input type="number" id="leg${i}_lots_max" value="1"></div>
-        <div class="field"><label>Step</label><input type="number" id="leg${i}_lots_step" value="1"></div>
-      </div>
-      <div class="field">
-        <label>Strike mode</label>
-        <select id="leg${i}_strike_mode" onchange="updateStrikeModeVisibility(${i})">
-          <option value="offset">ATM / OTM / ITM offset</option>
-          <option value="premium_range">Premium range</option>
-          <option value="premium_closest">Closest premium</option>
-        </select>
+        <select id="${prefix}_option_type"><option value="CE">Call</option><option value="PE">Put</option></select>
       </div>
     </div>
-    <div class="strike-mode-body" id="leg${i}_offset_body">
-      <div class="field wide">
-        <label>Offsets (ctrl/cmd-click to select multiple)</label>
-        <select multiple id="leg${i}_offsets" size="6">${offsetOptions}</select>
-      </div>
-    </div>
-    <div class="strike-mode-body hidden" id="leg${i}_premium_range_body">
-      <div class="row">
-        <div class="range-group">
-          <strong style="font-size:12px;">Lower</strong>
-          <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_lower_min" value="30"></div>
-          <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_lower_max" value="30"></div>
-          <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_lower_step" value="5"></div>
-        </div>
-        <div class="range-group">
-          <strong style="font-size:12px;">Upper</strong>
-          <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_upper_min" value="55"></div>
-          <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_upper_max" value="55"></div>
-          <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_upper_step" value="5"></div>
-        </div>
-      </div>
-    </div>
-    <div class="strike-mode-body hidden" id="leg${i}_premium_closest_body">
-      <div class="range-group">
-        <strong style="font-size:12px;">Premium</strong>
-        <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_value_min" value="30"></div>
-        <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_value_max" value="30"></div>
-        <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_value_step" value="5"></div>
-      </div>
-    </div>
+    ${strikeAndLotsFieldsHTML(prefix)}
   `;
   document.getElementById("legsContainer").appendChild(div);
 
   if (legCfg) {
-    document.getElementById(`leg${i}_action`).value = legCfg.action;
-    document.getElementById(`leg${i}_option_type`).value = legCfg.option_type;
-    setRangeField(`leg${i}_lots`, legCfg.lots);
-    document.getElementById(`leg${i}_strike_mode`).value = legCfg.strike_mode;
-    if (legCfg.strike_mode === "offset") {
-      const sel = document.getElementById(`leg${i}_offsets`);
-      for (const opt of sel.options) opt.selected = legCfg.offsets.includes(opt.value);
-    } else if (legCfg.strike_mode === "premium_range") {
-      setRangeField(`leg${i}_premium_lower`, legCfg.premium_lower);
-      setRangeField(`leg${i}_premium_upper`, legCfg.premium_upper);
-    } else if (legCfg.strike_mode === "premium_closest") {
-      setRangeField(`leg${i}_premium_value`, legCfg.premium_value);
-    }
-    updateStrikeModeVisibility(i);
+    document.getElementById(`${prefix}_action`).value = legCfg.action;
+    document.getElementById(`${prefix}_option_type`).value = legCfg.option_type;
+    applyLegFields(prefix, legCfg);
   }
 }
 
@@ -382,32 +450,39 @@ function removeLeg(i) {
   if (el) el.remove();
 }
 
-function updateStrikeModeVisibility(i) {
-  const mode = document.getElementById(`leg${i}_strike_mode`).value;
-  document.getElementById(`leg${i}_offset_body`).classList.toggle("hidden", mode !== "offset");
-  document.getElementById(`leg${i}_premium_range_body`).classList.toggle("hidden", mode !== "premium_range");
-  document.getElementById(`leg${i}_premium_closest_body`).classList.toggle("hidden", mode !== "premium_closest");
+function collectLeg(div) {
+  const prefix = div.id;
+  return {
+    action: document.getElementById(`${prefix}_action`).value,
+    option_type: document.getElementById(`${prefix}_option_type`).value,
+    ...collectLegFields(prefix),
+  };
 }
 
-function collectLeg(div) {
-  const i = div.id.replace("leg", "");
-  const mode = document.getElementById(`leg${i}_strike_mode`).value;
-  const leg = {
-    action: document.getElementById(`leg${i}_action`).value,
-    option_type: document.getElementById(`leg${i}_option_type`).value,
-    lots: rangeField(`leg${i}_lots`, {min:1,max:1,step:1}),
-    strike_mode: mode,
-    offsets: Array.from(document.getElementById(`leg${i}_offsets`).selectedOptions).map(o => o.value),
-    premium_lower: rangeField(`leg${i}_premium_lower`, {min:30,max:30,step:5}),
-    premium_upper: rangeField(`leg${i}_premium_upper`, {min:55,max:55,step:5}),
-    premium_value: rangeField(`leg${i}_premium_value`, {min:30,max:30,step:5}),
-  };
-  if (leg.strike_mode === "offset" && leg.offsets.length === 0) leg.offsets = ["ATM"];
-  return leg;
+function onLinkedToggle() {
+  const linked = document.getElementById("linked_ce_pe").checked;
+  document.getElementById("sharedLegPanel").classList.toggle("hidden", !linked);
+  document.getElementById("independentLegsPanel").classList.toggle("hidden", linked);
+
+  if (!linked && document.getElementById("legsContainer").children.length === 0) {
+    // Seed the independent editor from the shared config so switching over doesn't
+    // lose what you already set up.
+    const shared = collectLegFields("shared");
+    const action = document.getElementById("shared_action").value;
+    addLeg({ action, option_type: "CE", ...shared });
+    addLeg({ action, option_type: "PE", ...shared });
+  }
 }
 
 function collectConfig() {
-  const legs = Array.from(document.querySelectorAll(".leg")).map(collectLeg);
+  const linked = document.getElementById("linked_ce_pe").checked;
+  const sharedLeg = {
+    action: document.getElementById("shared_action").value,
+    option_type: "CE", // ignored by the backend when linked_ce_pe is true
+    ...collectLegFields("shared"),
+  };
+  const legs = Array.from(document.querySelectorAll("#legsContainer .leg")).map(collectLeg);
+
   return {
     instrument: document.getElementById("instrument").value,
     start_date: document.getElementById("start_date").value,
@@ -422,7 +497,9 @@ function collectConfig() {
       end: document.getElementById("exit_end").value,
       interval_minutes: parseInt(document.getElementById("exit_interval").value || "5"),
     },
-    legs: legs,
+    linked_ce_pe: linked,
+    shared_leg: sharedLeg,
+    legs: legs.length ? legs : [sharedLeg, {...sharedLeg, option_type: "PE"}],
     stoploss_enabled: document.getElementById("stoploss_enabled").checked,
     stoploss_pct: rangeField("stoploss", {min:20,max:50,step:10}),
     target_enabled: document.getElementById("target_enabled").checked,
@@ -452,9 +529,16 @@ function applyConfig(cfg) {
   document.getElementById("exit_end").value = cfg.exit_time.end;
   document.getElementById("exit_interval").value = cfg.exit_time.interval_minutes;
 
+  buildSharedLegPanel();
+  document.getElementById("shared_action").value = cfg.shared_leg.action;
+  applyLegFields("shared", cfg.shared_leg);
+
   document.getElementById("legsContainer").innerHTML = "";
   legCount = 0;
   cfg.legs.forEach(leg => addLeg(leg));
+
+  document.getElementById("linked_ce_pe").checked = cfg.linked_ce_pe;
+  onLinkedToggle();
 
   document.getElementById("stoploss_enabled").checked = cfg.stoploss_enabled;
   setRangeField("stoploss", cfg.stoploss_pct);
@@ -523,14 +607,27 @@ function renderStatus(s) {
   document.getElementById("stopBtn").disabled = !running;
 }
 
+function orderedColumns(columns) {
+  const present = new Set(columns);
+  const priorityFirst = PRIORITY_METRICS.filter(c => present.has(c));
+  const rest = columns.filter(c => !PRIORITY_METRICS.includes(c));
+  // combo_id/status lead, then the metrics you actually care about, then everything else.
+  const lead = rest.filter(c => ["combo_id", "status", "error"].includes(c));
+  const tail = rest.filter(c => !lead.includes(c));
+  return [...lead, ...priorityFirst, ...tail];
+}
+
 function renderResults(data) {
   const thead = document.querySelector("#resultsTable thead");
   const tbody = document.querySelector("#resultsTable tbody");
-  if (data.columns.length) {
-    thead.innerHTML = "<tr>" + data.columns.map(c => `<th>${c}</th>`).join("") + "</tr>";
-  }
+  if (!data.columns.length) return;
+
+  const columns = orderedColumns(data.columns);
+  const cls = c => PRIORITY_METRICS.includes(c) ? ' class="priority-col"' : "";
+
+  thead.innerHTML = "<tr>" + columns.map(c => `<th${cls(c)}>${c}</th>`).join("") + "</tr>";
   tbody.innerHTML = data.rows.map(row =>
-    "<tr>" + data.columns.map(c => `<td>${row[c] ?? ""}</td>`).join("") + "</tr>"
+    "<tr>" + columns.map(c => `<td${cls(c)}>${row[c] ?? ""}</td>`).join("") + "</tr>"
   ).join("");
 }
 

@@ -3,6 +3,9 @@ from __future__ import annotations
 from src.web.expand import expand_ui_config, nest_combo, to_sweep_config
 from src.web.models import LegUIConfig, NumericRange, SweepUIConfig, TimeRange
 
+# These tests exercise the independent-legs path explicitly, so linked_ce_pe is off by
+# default here; the linked (shared CE/PE) path has its own tests further down.
+
 
 def test_numeric_range_single_value_when_min_equals_max():
     assert NumericRange(min=5, max=5, step=10).as_list() == [5]
@@ -37,6 +40,7 @@ def _base_cfg(**overrides) -> SweepUIConfig:
         end_date="2025-06-01",
         entry_time=TimeRange(start="09:20", end="09:20", interval_minutes=15),
         exit_time=TimeRange(start="15:10", end="15:10", interval_minutes=5),
+        linked_ce_pe=False,
         legs=[LegUIConfig(action="SELL", option_type="CE", strike_mode="offset", offsets=["ATM"])],
         stoploss_enabled=False,
         target_enabled=False,
@@ -126,3 +130,46 @@ def test_expand_ui_config_end_to_end_count():
     )
     combos = expand_ui_config(cfg)
     assert len(combos) == 3 * 2
+
+
+def test_linked_ce_pe_uses_one_shared_vary_dimension_not_two():
+    """The whole point of linking: a shared 2-value strike dimension should contribute
+    2 combinations total, not 2*2=4 (which is what two independently-varying CE/PE legs
+    with the same 2 offsets would produce)."""
+    cfg = _base_cfg(
+        linked_ce_pe=True,
+        shared_leg=LegUIConfig(action="SELL", strike_mode="offset", offsets=["ATM", "OTM1"]),
+    )
+    sweep = to_sweep_config(cfg)
+    assert "shared_offset" in sweep.vary
+    assert "leg0_offset" not in sweep.vary and "leg1_offset" not in sweep.vary
+
+    combos = expand_ui_config(cfg)
+    assert len(combos) == 2
+
+
+def test_linked_ce_pe_mirrors_strike_and_lots_across_both_legs():
+    cfg = _base_cfg(
+        linked_ce_pe=True,
+        shared_leg=LegUIConfig(
+            action="SELL",
+            strike_mode="premium_range",
+            premium_lower=NumericRange(min=30, max=30, step=5),
+            premium_upper=NumericRange(min=55, max=55, step=5),
+        ),
+    )
+    combos = expand_ui_config(cfg)
+    assert len(combos) == 1
+    ce_leg, pe_leg = combos[0]["legs"]
+    assert ce_leg["option_type"] == "CE" and pe_leg["option_type"] == "PE"
+    assert ce_leg["action"] == pe_leg["action"] == "SELL"
+    assert ce_leg["lots"] == pe_leg["lots"]
+    assert ce_leg["strike"] == pe_leg["strike"] == {"mode": "premium_range", "lower": 30, "upper": 55}
+
+
+def test_linked_ce_pe_is_the_default():
+    cfg = SweepUIConfig()
+    assert cfg.linked_ce_pe is True
+    combos = expand_ui_config(cfg)
+    assert all(len(c["legs"]) == 2 for c in combos)
+    assert all(c["legs"][0]["strike"] == c["legs"][1]["strike"] for c in combos)
