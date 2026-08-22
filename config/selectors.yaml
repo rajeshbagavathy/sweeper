@@ -44,6 +44,15 @@ builder:
                                                 # Strikes / Premium Range / etc.), not this field.
   leg_lots: "input[type=\"number\"]"           # first number input inside leg_row (labeled "Lots") — use .first, scope inside leg_row
 
+  # Strike-criteria MODE dropdown (confusingly, also inside "#select_StrikeType" - the
+  # element that "Select Strike Criteria" actually labels). Selecting "Premium Range" or
+  # "Closest Premium" swaps the ATM/OTM offset dropdown (leg_strike_selector above) out
+  # for these numeric fields instead - confirmed live while building the sweep UI.
+  leg_strike_criteria: "#select_StrikeType select"   # Round Strikes / Premium Range / Closest Premium / etc.
+  leg_strike_premium_lower: "label:text-is(\"Lower\") + div input[type=\"number\"]"   # "Premium Range" mode
+  leg_strike_premium_upper: "label:text-is(\"Upper\") + div input[type=\"number\"]"   # "Premium Range" mode
+  leg_strike_premium_value: "label:text-is(\"Premium\") + div input[type=\"number\"]" # "Closest Premium" mode
+
   # --- entry / exit ---
   entry_time_input: "div:has(> label:text-is(\"Entry Time\")) input[type=\"time\"]"
   exit_time_input: "div:has(> label:text-is(\"Exit Time\")) input[type=\"time\"]"

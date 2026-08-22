@@ -28,6 +28,10 @@ class BuilderSelectors:
     leg_action: SelectorValue
     leg_option_type: SelectorValue
     leg_strike_selector: SelectorValue
+    leg_strike_criteria: SelectorValue
+    leg_strike_premium_lower: SelectorValue
+    leg_strike_premium_upper: SelectorValue
+    leg_strike_premium_value: SelectorValue
     leg_lots: SelectorValue
     entry_time_input: SelectorValue
     exit_time_input: SelectorValue
