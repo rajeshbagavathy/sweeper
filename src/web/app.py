@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from src.sweep import TooManyCombinations
 from src.web.expand import expand_ui_config, load_ui_config, save_ui_config
 from src.web.models import SweepUIConfig
+from src.web.narrow import narrow_config, rmdd_sort_key
 from src.web.state import run_state
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -64,13 +65,6 @@ def get_status() -> dict:
     return run_state.snapshot()
 
 
-def _rmdd_sort_key(row: dict) -> float:
-    try:
-        return float(row.get("return_max_dd", ""))
-    except (TypeError, ValueError):
-        return float("-inf")  # missing/error rows sink to the bottom, never crash the sort
-
-
 @app.get("/api/results")
 def get_results(limit: int = 50) -> dict:
     snapshot = run_state.snapshot()
@@ -83,5 +77,28 @@ def get_results(limit: int = 50) -> dict:
         columns = reader.fieldnames or []
         rows = list(reader)
 
-    rows.sort(key=_rmdd_sort_key, reverse=True)
+    rows.sort(key=rmdd_sort_key, reverse=True)
     return {"rows": rows[:limit], "columns": columns}
+
+
+@app.post("/api/narrow")
+def narrow(top_n: int = 10) -> SweepUIConfig:
+    """Read the active/most-recent results CSV, and narrow every range in the saved UI
+    config to center on whatever won in the top `top_n` rows by Return/MaxDD - one
+    round of coarse-grid-then-refine instead of hand-editing every range."""
+    snapshot = run_state.snapshot()
+    csv_path = snapshot.get("csv_path")
+    if not csv_path or not Path(csv_path).exists():
+        raise HTTPException(status_code=400, detail="No results yet to narrow from - run the sweep first.")
+
+    with open(csv_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    cfg = load_ui_config()
+    try:
+        narrowed = narrow_config(cfg, rows, top_n=top_n)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    save_ui_config(narrowed)
+    return narrowed

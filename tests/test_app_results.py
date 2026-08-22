@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.web.app import _rmdd_sort_key
+from src.web.narrow import rmdd_sort_key as _rmdd_sort_key
 
 
 def test_rmdd_sort_key_parses_float():

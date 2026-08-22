@@ -416,6 +416,16 @@
     <div class="table-scroll">
       <table id="resultsTable"><thead></thead><tbody></tbody></table>
     </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field"><label>Top N</label><input type="number" id="narrowTopN" value="10" min="1"></div>
+      <button class="secondary" onclick="narrowToTop()">Narrow ranges to top N</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Coarse-to-fine refinement: re-centers every range on whatever won in the top N
+      results by Return/MaxDD (and halves each interval). Review the form above before
+      running again - this overwrites your current config.
+    </p>
+    <div id="narrowOutput" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
   </section>
 
 </main>
@@ -807,6 +817,20 @@ async function startRun() {
   }
   document.getElementById("statusMessage").textContent = "";
   startPolling();
+}
+
+async function narrowToTop() {
+  const topN = parseInt(document.getElementById("narrowTopN").value || "10");
+  const out = document.getElementById("narrowOutput");
+  out.textContent = "Narrowing...";
+  const res = await fetch(`/api/narrow?top_n=${topN}`, {method: "POST"});
+  if (!res.ok) {
+    out.textContent = "Error: " + await errorDetail(res);
+    return;
+  }
+  const cfg = await res.json();
+  applyConfig(cfg);
+  out.textContent = `Ranges narrowed around your top ${topN} result(s) by Return/MaxDD. Review the form above, then Preview/Start again.`;
 }
 
 async function stopRun() {
