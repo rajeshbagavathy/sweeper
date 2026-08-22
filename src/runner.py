@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from playwright.sync_api import Page
 from rich.console import Console
@@ -40,9 +41,21 @@ def run_sweep(
     max_retries: int = 2,
     email: str | None = None,
     password: str | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
+    stop_event: threading.Event | None = None,
 ) -> dict[str, int]:
     console = Console()
     stats = {"ok": 0, "error": 0, "skipped": 0}
+
+    def _report(current_combo_index: int) -> None:
+        if on_progress is not None:
+            on_progress(
+                {
+                    "current": current_combo_index,
+                    "total": len(combos),
+                    **stats,
+                }
+            )
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -56,7 +69,10 @@ def run_sweep(
             f"Sweeping (ok=0 error=0 skipped=0)", total=len(combos)
         )
 
-        for combo in combos:
+        for i, combo in enumerate(combos):
+            if stop_event is not None and stop_event.is_set():
+                break
+
             cid = combo_id(combo)
 
             # Step 2: skip combos that already succeeded. Ones that previously errored
@@ -66,6 +82,7 @@ def run_sweep(
                 stats["skipped"] += 1
                 progress.advance(task)
                 progress.update(task, description=_status_line(stats))
+                _report(i + 1)
                 continue
 
             _run_one_combo(
@@ -85,6 +102,7 @@ def run_sweep(
 
             progress.advance(task)
             progress.update(task, description=_status_line(stats))
+            _report(i + 1)
             time.sleep(delay_s)
 
     return stats

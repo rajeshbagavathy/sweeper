@@ -34,7 +34,7 @@ def apply_combination(page: Page, selectors: Selectors, combo: dict[str, Any]) -
         leg_locator = page.locator(b.leg_row.format(n=i))
         resolve(leg_locator, b.leg_action).select_option(label=_ACTION_LABELS[leg["action"]])
         resolve(leg_locator, b.leg_option_type).select_option(label=_OPTION_TYPE_LABELS[leg["option_type"]])
-        resolve(leg_locator, b.leg_strike_selector).select_option(label=str(leg["strike"]))
+        _apply_leg_strike(leg_locator, b, leg["strike"])
         resolve(leg_locator, b.leg_lots).first.fill(str(leg["lots"]))
 
     _apply_stoploss(page, b, combo.get("stoploss_pct"))
@@ -42,6 +42,26 @@ def apply_combination(page: Page, selectors: Selectors, combo: dict[str, Any]) -
     _apply_trail_sl(page, b, combo.get("trail_sl"))
 
     resolve(page, b.run_backtest_button).click()
+
+
+def _apply_leg_strike(leg_locator, b, strike: str | dict[str, Any]) -> None:
+    """strike is either a plain offset string ("ATM", "OTM3", ...) - the original,
+    always-supported mode - or a dict describing the newer premium-based modes
+    (discovered live while building the sweep-config web UI)."""
+    if isinstance(strike, str):
+        resolve(leg_locator, b.leg_strike_selector).select_option(label=strike)
+        return
+
+    mode = strike["mode"]
+    if mode == "premium_range":
+        resolve(leg_locator, b.leg_strike_criteria).select_option(label="Premium Range")
+        resolve(leg_locator, b.leg_strike_premium_lower).fill(str(strike["lower"]))
+        resolve(leg_locator, b.leg_strike_premium_upper).fill(str(strike["upper"]))
+    elif mode == "premium_closest":
+        resolve(leg_locator, b.leg_strike_criteria).select_option(label="Closest Premium")
+        resolve(leg_locator, b.leg_strike_premium_value).fill(str(strike["value"]))
+    else:
+        raise ValueError(f"Unknown leg strike mode: {mode!r}")
 
 
 def _set_instrument(page: Page, b, instrument: str) -> None:

@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AlgoTest Sweeper</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e0e3e8;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --ok: #16a34a;
+    --error: #dc2626;
+    --skip: #9333ea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  section.card h2 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field.wide { min-width: 220px; }
+  input[type=text], input[type=number], input[type=date], input[type=time], select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+    color: var(--text);
+  }
+  select[multiple] { min-height: 110px; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .range-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .range-group .field { min-width: 70px; }
+  .leg {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .leg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .leg-header strong { font-size: 13px; }
+  .strike-mode-body { margin-top: 10px; }
+  .hidden { display: none !important; }
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  button.primary { background: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.secondary { background: #eef1f5; color: var(--text); }
+  button.danger { background: #fee2e2; color: var(--error); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .status-bar {
+    display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.idle { background: #eef1f5; color: var(--muted); }
+  .badge.running { background: #dbeafe; color: var(--accent-dark); }
+  .badge.done { background: #dcfce7; color: var(--ok); }
+  .badge.stopped { background: #fef3c7; color: #92400e; }
+  .badge.error { background: #fee2e2; color: var(--error); }
+  .progress-bar-outer { width: 100%; height: 8px; background: #eef1f5; border-radius: 999px; overflow: hidden; }
+  .progress-bar-inner { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+  .counts span { margin-right: 14px; }
+  .counts .ok { color: var(--ok); font-weight: 600; }
+  .counts .error { color: var(--error); font-weight: 600; }
+  .counts .skipped { color: var(--skip); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; white-space: nowrap; }
+  th { background: #f9fafb; position: sticky; top: 0; }
+  .table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  #previewOutput, #dryRunOutput { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  .exclude-box textarea { width: 100%; min-height: 50px; font-family: monospace; font-size: 12px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AlgoTest Sweeper</h1>
+  <p>Set ranges + intervals for each parameter, preview the grid, then run it against your logged-in AlgoTest session.</p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Instrument &amp; period</h2>
+    <div class="row">
+      <div class="field">
+        <label>Instrument</label>
+        <select id="instrument">
+          <option value="NIFTY">NIFTY</option>
+          <option value="SENSEX">SENSEX</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Start date</label>
+        <input type="date" id="start_date">
+      </div>
+      <div class="field">
+        <label>End date</label>
+        <input type="date" id="end_date">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Entry / Exit time ranges</h2>
+    <div class="row">
+      <div class="range-group">
+        <strong style="font-size:12px;">Entry time</strong>
+        <div class="field"><label>From</label><input type="time" id="entry_start"></div>
+        <div class="field"><label>To</label><input type="time" id="entry_end"></div>
+        <div class="field"><label>Every (min)</label><input type="number" id="entry_interval" min="1" value="15"></div>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">Exit time</strong>
+        <div class="field"><label>From</label><input type="time" id="exit_start"></div>
+        <div class="field"><label>To</label><input type="time" id="exit_end"></div>
+        <div class="field"><label>Every (min)</label><input type="number" id="exit_interval" min="1" value="5"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Legs</h2>
+    <div id="legsContainer"></div>
+    <button class="secondary small" onclick="addLeg()">+ Add leg</button>
+  </section>
+
+  <section class="card">
+    <h2>Stop loss / Target</h2>
+    <div class="row">
+      <div class="range-group">
+        <label class="checkbox-row"><input type="checkbox" id="stoploss_enabled"> Stop loss (Total Premium %)</label>
+        <div class="field"><label>Min</label><input type="number" id="stoploss_min"></div>
+        <div class="field"><label>Max</label><input type="number" id="stoploss_max"></div>
+        <div class="field"><label>Step</label><input type="number" id="stoploss_step"></div>
+      </div>
+      <div class="range-group">
+        <label class="checkbox-row"><input type="checkbox" id="target_enabled"> Target (Total Premium %)</label>
+        <div class="field"><label>Min</label><input type="number" id="target_min"></div>
+        <div class="field"><label>Max</label><input type="number" id="target_max"></div>
+        <div class="field"><label>Step</label><input type="number" id="target_step"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Trailing SL (Lock mode: "If profit reaches X, lock Y")</h2>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="trail_sl_enabled"> Enable</label>
+      <label class="checkbox-row"><input type="checkbox" id="trail_sl_include_none" checked> Also try "no trailing SL"</label>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div class="range-group">
+        <strong style="font-size:12px;">If profit reaches (X)</strong>
+        <div class="field"><label>Min</label><input type="number" id="trail_x_min"></div>
+        <div class="field"><label>Max</label><input type="number" id="trail_x_max"></div>
+        <div class="field"><label>Step</label><input type="number" id="trail_x_step"></div>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">Lock profit (Y)</strong>
+        <div class="field"><label>Min</label><input type="number" id="trail_y_min"></div>
+        <div class="field"><label>Max</label><input type="number" id="trail_y_max"></div>
+        <div class="field"><label>Step</label><input type="number" id="trail_y_step"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Advanced: exclude rules</h2>
+    <div class="exclude-box">
+      <p style="font-size:12px;color:var(--muted);margin-top:0;">
+        One Python expression per line, evaluated against each combination's own keys
+        (target_pct <= stoploss_pct is added automatically when both are enabled).
+      </p>
+      <textarea id="exclude"></textarea>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Run options</h2>
+    <div class="row">
+      <div class="field"><label>Delay between runs (s)</label><input type="number" id="delay" step="0.5" value="2"></div>
+      <div class="field"><label>Result timeout (s)</label><input type="number" id="result_timeout" value="180"></div>
+      <div class="field"><label>Max retries</label><input type="number" id="max_retries" value="2"></div>
+      <div class="field"><label>Limit (smoke test)</label><input type="number" id="limit" placeholder="all"></div>
+      <label class="checkbox-row"><input type="checkbox" id="headless"> Headless</label>
+      <label class="checkbox-row"><input type="checkbox" id="shuffle"> Shuffle order</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Run</h2>
+    <div class="actions">
+      <button class="secondary" onclick="preview()">Preview combinations</button>
+      <button class="primary" id="startBtn" onclick="startRun()">Start</button>
+      <button class="danger" id="stopBtn" onclick="stopRun()" disabled>Stop</button>
+    </div>
+    <div id="previewOutput" style="margin-top:10px;"></div>
+
+    <div style="margin-top:16px;" class="status-bar">
+      <span class="badge idle" id="statusBadge">idle</span>
+      <div class="progress-bar-outer" style="flex:1; min-width:200px;">
+        <div class="progress-bar-inner" id="progressBar"></div>
+      </div>
+      <span id="progressText">0 / 0</span>
+    </div>
+    <div class="counts" style="margin-top:8px;">
+      <span class="ok" id="okCount">ok: 0</span>
+      <span class="error" id="errorCount">error: 0</span>
+      <span class="skipped" id="skippedCount">skipped: 0</span>
+    </div>
+    <div id="statusMessage" style="margin-top:6px; font-size:12px; color:var(--error);"></div>
+  </section>
+
+  <section class="card">
+    <h2>Results</h2>
+    <div class="table-scroll">
+      <table id="resultsTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const STRIKE_OFFSETS = ["ITM10","ITM9","ITM8","ITM7","ITM6","ITM5","ITM4","ITM3","ITM2","ITM1",
+  "ATM","OTM1","OTM2","OTM3","OTM4","OTM5","OTM6","OTM7","OTM8","OTM9","OTM10"];
+
+let legCount = 0;
+let pollTimer = null;
+
+function rangeField(idPrefix, def) {
+  return {
+    min: parseFloat(document.getElementById(idPrefix + "_min")?.value ?? def.min),
+    max: parseFloat(document.getElementById(idPrefix + "_max")?.value ?? def.max),
+    step: parseFloat(document.getElementById(idPrefix + "_step")?.value ?? def.step ?? 1),
+  };
+}
+
+function setRangeField(idPrefix, r) {
+  if (document.getElementById(idPrefix + "_min")) document.getElementById(idPrefix + "_min").value = r.min;
+  if (document.getElementById(idPrefix + "_max")) document.getElementById(idPrefix + "_max").value = r.max;
+  if (document.getElementById(idPrefix + "_step")) document.getElementById(idPrefix + "_step").value = r.step;
+}
+
+function addLeg(legCfg) {
+  const i = legCount++;
+  const div = document.createElement("div");
+  div.className = "leg";
+  div.id = "leg" + i;
+  const offsetOptions = STRIKE_OFFSETS.map(o => `<option value="${o}">${o}</option>`).join("");
+  div.innerHTML = `
+    <div class="leg-header">
+      <strong>Leg ${i + 1}</strong>
+      <button class="secondary small" onclick="removeLeg(${i})">Remove</button>
+    </div>
+    <div class="row">
+      <div class="field"><label>Action</label>
+        <select id="leg${i}_action"><option value="SELL">Sell</option><option value="BUY">Buy</option></select>
+      </div>
+      <div class="field"><label>Option type</label>
+        <select id="leg${i}_option_type"><option value="CE">Call</option><option value="PE">Put</option></select>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">Lots</strong>
+        <div class="field"><label>Min</label><input type="number" id="leg${i}_lots_min" value="1"></div>
+        <div class="field"><label>Max</label><input type="number" id="leg${i}_lots_max" value="1"></div>
+        <div class="field"><label>Step</label><input type="number" id="leg${i}_lots_step" value="1"></div>
+      </div>
+      <div class="field">
+        <label>Strike mode</label>
+        <select id="leg${i}_strike_mode" onchange="updateStrikeModeVisibility(${i})">
+          <option value="offset">ATM / OTM / ITM offset</option>
+          <option value="premium_range">Premium range</option>
+          <option value="premium_closest">Closest premium</option>
+        </select>
+      </div>
+    </div>
+    <div class="strike-mode-body" id="leg${i}_offset_body">
+      <div class="field wide">
+        <label>Offsets (ctrl/cmd-click to select multiple)</label>
+        <select multiple id="leg${i}_offsets" size="6">${offsetOptions}</select>
+      </div>
+    </div>
+    <div class="strike-mode-body hidden" id="leg${i}_premium_range_body">
+      <div class="row">
+        <div class="range-group">
+          <strong style="font-size:12px;">Lower</strong>
+          <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_lower_min" value="30"></div>
+          <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_lower_max" value="30"></div>
+          <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_lower_step" value="5"></div>
+        </div>
+        <div class="range-group">
+          <strong style="font-size:12px;">Upper</strong>
+          <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_upper_min" value="55"></div>
+          <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_upper_max" value="55"></div>
+          <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_upper_step" value="5"></div>
+        </div>
+      </div>
+    </div>
+    <div class="strike-mode-body hidden" id="leg${i}_premium_closest_body">
+      <div class="range-group">
+        <strong style="font-size:12px;">Premium</strong>
+        <div class="field"><label>Min</label><input type="number" id="leg${i}_premium_value_min" value="30"></div>
+        <div class="field"><label>Max</label><input type="number" id="leg${i}_premium_value_max" value="30"></div>
+        <div class="field"><label>Step</label><input type="number" id="leg${i}_premium_value_step" value="5"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById("legsContainer").appendChild(div);
+
+  if (legCfg) {
+    document.getElementById(`leg${i}_action`).value = legCfg.action;
+    document.getElementById(`leg${i}_option_type`).value = legCfg.option_type;
+    setRangeField(`leg${i}_lots`, legCfg.lots);
+    document.getElementById(`leg${i}_strike_mode`).value = legCfg.strike_mode;
+    if (legCfg.strike_mode === "offset") {
+      const sel = document.getElementById(`leg${i}_offsets`);
+      for (const opt of sel.options) opt.selected = legCfg.offsets.includes(opt.value);
+    } else if (legCfg.strike_mode === "premium_range") {
+      setRangeField(`leg${i}_premium_lower`, legCfg.premium_lower);
+      setRangeField(`leg${i}_premium_upper`, legCfg.premium_upper);
+    } else if (legCfg.strike_mode === "premium_closest") {
+      setRangeField(`leg${i}_premium_value`, legCfg.premium_value);
+    }
+    updateStrikeModeVisibility(i);
+  }
+}
+
+function removeLeg(i) {
+  const el = document.getElementById("leg" + i);
+  if (el) el.remove();
+}
+
+function updateStrikeModeVisibility(i) {
+  const mode = document.getElementById(`leg${i}_strike_mode`).value;
+  document.getElementById(`leg${i}_offset_body`).classList.toggle("hidden", mode !== "offset");
+  document.getElementById(`leg${i}_premium_range_body`).classList.toggle("hidden", mode !== "premium_range");
+  document.getElementById(`leg${i}_premium_closest_body`).classList.toggle("hidden", mode !== "premium_closest");
+}
+
+function collectLeg(div) {
+  const i = div.id.replace("leg", "");
+  const mode = document.getElementById(`leg${i}_strike_mode`).value;
+  const leg = {
+    action: document.getElementById(`leg${i}_action`).value,
+    option_type: document.getElementById(`leg${i}_option_type`).value,
+    lots: rangeField(`leg${i}_lots`, {min:1,max:1,step:1}),
+    strike_mode: mode,
+    offsets: Array.from(document.getElementById(`leg${i}_offsets`).selectedOptions).map(o => o.value),
+    premium_lower: rangeField(`leg${i}_premium_lower`, {min:30,max:30,step:5}),
+    premium_upper: rangeField(`leg${i}_premium_upper`, {min:55,max:55,step:5}),
+    premium_value: rangeField(`leg${i}_premium_value`, {min:30,max:30,step:5}),
+  };
+  if (leg.strike_mode === "offset" && leg.offsets.length === 0) leg.offsets = ["ATM"];
+  return leg;
+}
+
+function collectConfig() {
+  const legs = Array.from(document.querySelectorAll(".leg")).map(collectLeg);
+  return {
+    instrument: document.getElementById("instrument").value,
+    start_date: document.getElementById("start_date").value,
+    end_date: document.getElementById("end_date").value,
+    entry_time: {
+      start: document.getElementById("entry_start").value,
+      end: document.getElementById("entry_end").value,
+      interval_minutes: parseInt(document.getElementById("entry_interval").value || "15"),
+    },
+    exit_time: {
+      start: document.getElementById("exit_start").value,
+      end: document.getElementById("exit_end").value,
+      interval_minutes: parseInt(document.getElementById("exit_interval").value || "5"),
+    },
+    legs: legs,
+    stoploss_enabled: document.getElementById("stoploss_enabled").checked,
+    stoploss_pct: rangeField("stoploss", {min:20,max:50,step:10}),
+    target_enabled: document.getElementById("target_enabled").checked,
+    target_pct: rangeField("target", {min:30,max:80,step:25}),
+    trail_sl_enabled: document.getElementById("trail_sl_enabled").checked,
+    trail_sl_include_none: document.getElementById("trail_sl_include_none").checked,
+    trail_sl_x: rangeField("trail_x", {min:20,max:20,step:5}),
+    trail_sl_y: rangeField("trail_y", {min:10,max:10,step:5}),
+    exclude: document.getElementById("exclude").value.split("\n").map(s => s.trim()).filter(Boolean),
+    limit: document.getElementById("limit").value ? parseInt(document.getElementById("limit").value) : null,
+    shuffle: document.getElementById("shuffle").checked,
+    delay: parseFloat(document.getElementById("delay").value || "2"),
+    headless: document.getElementById("headless").checked,
+    result_timeout: parseInt(document.getElementById("result_timeout").value || "180"),
+    max_retries: parseInt(document.getElementById("max_retries").value || "2"),
+  };
+}
+
+function applyConfig(cfg) {
+  document.getElementById("instrument").value = cfg.instrument;
+  document.getElementById("start_date").value = cfg.start_date;
+  document.getElementById("end_date").value = cfg.end_date;
+  document.getElementById("entry_start").value = cfg.entry_time.start;
+  document.getElementById("entry_end").value = cfg.entry_time.end;
+  document.getElementById("entry_interval").value = cfg.entry_time.interval_minutes;
+  document.getElementById("exit_start").value = cfg.exit_time.start;
+  document.getElementById("exit_end").value = cfg.exit_time.end;
+  document.getElementById("exit_interval").value = cfg.exit_time.interval_minutes;
+
+  document.getElementById("legsContainer").innerHTML = "";
+  legCount = 0;
+  cfg.legs.forEach(leg => addLeg(leg));
+
+  document.getElementById("stoploss_enabled").checked = cfg.stoploss_enabled;
+  setRangeField("stoploss", cfg.stoploss_pct);
+  document.getElementById("target_enabled").checked = cfg.target_enabled;
+  setRangeField("target", cfg.target_pct);
+  document.getElementById("trail_sl_enabled").checked = cfg.trail_sl_enabled;
+  document.getElementById("trail_sl_include_none").checked = cfg.trail_sl_include_none;
+  setRangeField("trail_x", cfg.trail_sl_x);
+  setRangeField("trail_y", cfg.trail_sl_y);
+  document.getElementById("exclude").value = (cfg.exclude || []).join("\n");
+  document.getElementById("limit").value = cfg.limit ?? "";
+  document.getElementById("shuffle").checked = cfg.shuffle;
+  document.getElementById("delay").value = cfg.delay;
+  document.getElementById("headless").checked = cfg.headless;
+  document.getElementById("result_timeout").value = cfg.result_timeout;
+  document.getElementById("max_retries").value = cfg.max_retries;
+}
+
+async function loadConfig() {
+  const res = await fetch("/api/config");
+  const cfg = await res.json();
+  applyConfig(cfg);
+}
+
+async function preview() {
+  const cfg = collectConfig();
+  const res = await fetch("/api/dry-run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
+  if (!res.ok) {
+    document.getElementById("previewOutput").textContent = "Error: " + await res.text();
+    return;
+  }
+  const data = await res.json();
+  document.getElementById("previewOutput").textContent =
+    `${data.count} combination(s). First combos:\n` + JSON.stringify(data.sample, null, 1);
+}
+
+async function startRun() {
+  const cfg = collectConfig();
+  const res = await fetch("/api/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
+  if (!res.ok) {
+    document.getElementById("statusMessage").textContent = "Error: " + await res.text();
+    return;
+  }
+  document.getElementById("statusMessage").textContent = "";
+  startPolling();
+}
+
+async function stopRun() {
+  await fetch("/api/stop", {method: "POST"});
+}
+
+function renderStatus(s) {
+  const badge = document.getElementById("statusBadge");
+  badge.textContent = s.status;
+  badge.className = "badge " + s.status;
+  const pct = s.total ? Math.round((s.current / s.total) * 100) : 0;
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("progressText").textContent = `${s.current} / ${s.total}`;
+  document.getElementById("okCount").textContent = "ok: " + s.ok;
+  document.getElementById("errorCount").textContent = "error: " + s.error;
+  document.getElementById("skippedCount").textContent = "skipped: " + s.skipped;
+  document.getElementById("statusMessage").textContent = s.message || "";
+
+  const running = s.status === "running";
+  document.getElementById("startBtn").disabled = running;
+  document.getElementById("stopBtn").disabled = !running;
+}
+
+function renderResults(data) {
+  const thead = document.querySelector("#resultsTable thead");
+  const tbody = document.querySelector("#resultsTable tbody");
+  if (data.columns.length) {
+    thead.innerHTML = "<tr>" + data.columns.map(c => `<th>${c}</th>`).join("") + "</tr>";
+  }
+  tbody.innerHTML = data.rows.map(row =>
+    "<tr>" + data.columns.map(c => `<td>${row[c] ?? ""}</td>`).join("") + "</tr>"
+  ).join("");
+}
+
+async function pollOnce() {
+  const statusRes = await fetch("/api/status");
+  const status = await statusRes.json();
+  renderStatus(status);
+
+  const resultsRes = await fetch("/api/results");
+  renderResults(await resultsRes.json());
+
+  if (status.status !== "running" && pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollOnce();
+  pollTimer = setInterval(pollOnce, 1500);
+}
+
+loadConfig();
+pollOnce();
+</script>
+</body>
+</html>
