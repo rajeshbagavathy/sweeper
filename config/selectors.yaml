@@ -21,7 +21,7 @@ login:
   email_input:             # actually your phone-number input
   password_input:
   submit_button:
-  logged_in_marker: "header:has-text(\"Credits Available\")"   # confirmed: only rendered once logged in
+  logged_in_marker: "text=Credits Available"   # confirmed: only rendered once logged in (there's no actual <header> tag on this page, despite the earlier note - fixed after a live smoke-test caught it)
 
 builder:
   url: "https://algotest.in/backtest"
@@ -49,13 +49,24 @@ builder:
   exit_time_input: "div:has(> label:text-is(\"Exit Time\")) input[type=\"time\"]"
 
   # --- risk management (these are the OVERALL/global settings, not per-leg) ---
+  # stoploss_toggle / target_toggle aren't in the original field list, but the type/value
+  # fields next to them are disabled until their toggle is switched on, so they're added
+  # here (same discovery pass, confirmed data-test-id attributes) rather than inlined in
+  # Python — every selector still lives in this one file.
+  stoploss_toggle: "[data-test-id=\"toggle-handle_Overall Stop Loss_overall-stoploss\"]"
   stoploss_type: "#overall-stoploss select"                              # Max Loss / Total Premium %
   stoploss_value: "[id=\"OverallStop Loss_overall-stoploss_input1\"]"
+  target_toggle: "[data-test-id=\"toggle-handle_Overall Target_overall-target\"]"
   target_type: "#overall-target select"                                  # Max Profit / Total Premium %
   target_value: "[id=\"OverallTarget_overall-target_input1\"]"
   trail_sl_toggle: "[data-test-id=\"toggle-handle_Trailing Options_trailing-options\"]"
-  trail_sl_x: "[id=\"TrailingOptions_trailing-options_input1\"]"         # "If profit reaches"
-  trail_sl_y: "[id=\"TrailingOptions_trailing-options_input2\"]"         # "Lock profit"
+  # Fixed during the Phase 1 smoke test: "TrailingOptions_trailing-options_input1/2" are
+  # only for the "Lock and Trail" / "Overall Trail SL" modes and stay display:none under
+  # the default "Lock" mode. These are the actually-visible fields for "Lock" mode -
+  # scoped by adjacent-sibling from each field's own label, since both inputs share the
+  # same generic id="number-input".
+  trail_sl_x: "label:text-is(\"If profit reaches\") + div input[type=\"number\"]"
+  trail_sl_y: "label:text-is(\"Lock profit\") + div input[type=\"number\"]"
   # NEEDS-CHECK: reentry_count only renders as a real <input> once its toggle is switched
   # on (before that it's static, non-interactive text). Toggle "Overall Re-entry on SL" on
   # in the UI once and confirm this still finds it.
@@ -73,7 +84,7 @@ results:
   # NEEDS-CHECK: no error was ever produced during discovery (the one submitted backtest
   # succeeded), so this is an educated guess, not a confirmed selector. Please cause one
   # real error (e.g. temporarily set an invalid date range) and check what appears.
-  error_marker: "[role=\"alert\"], [class*=\"toast\"]"
+  error_marker: "[role=\"alert\"]:not(#__next-route-announcer__), [class*=\"toast\"]"  # excludes Next.js's always-present, visually-hidden route announcer (a confirmed false positive caught during the Phase 1 smoke test)
   metrics:                    # confirmed: label -> value pairs in a 3-column results table
     total_pnl: "tr:has-text(\"Overall Profit\") td:nth-child(2)"
     max_drawdown: "tr:has-text(\"Max Drawdown\"):not(:has-text(\"Duration\")) td:nth-child(2)"  # excludes the separate "Duration of Max Drawdown" row, which also contains this substring

@@ -1,0 +1,22 @@
+fixed:
+  instrument: NIFTY
+  start_date: "2025-08-22"
+  end_date: "2026-08-22"
+  legs:
+    - {action: SELL, option_type: CE, strike: ATM, lots: 1}
+    - {action: SELL, option_type: PE, strike: ATM, lots: 1}
+
+vary:
+  entry_time:   ["09:20", "09:30", "09:45", "10:15"]
+  exit_time:    ["15:10", "15:15"]
+  stoploss_pct: [20, 30, 40, 50]
+  target_pct:   [30, 50, 80, null]        # null = no target
+  trail_sl:     [null, {x: 20, y: 10}]
+
+# skip nonsensical combinations. Each expression is evaluated with only the
+# combination's own keys in scope (a restricted eval, no builtins) - see src/sweep.py
+exclude:
+  - "target_pct is not None and target_pct <= stoploss_pct"
+
+limit: null          # cap total runs, useful for smoke tests
+shuffle: false        # randomise order so a partial sweep still spans the space
