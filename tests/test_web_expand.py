@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.web.expand import expand_ui_config, nest_combo, to_sweep_config
-from src.web.models import LegRiskConfig, LegUIConfig, NumericRange, StrikeConfig, SweepUIConfig, TimeRange
+from src.web.models import LegRiskConfig, LegUIConfig, NumericRange, OverallRiskConfig, StrikeConfig, SweepUIConfig, TimeRange
 
 # These tests exercise the independent-legs path explicitly, so linked_ce_pe is off by
 # default here; the linked (shared CE/PE) path has its own tests further down.
@@ -46,8 +46,8 @@ def _base_cfg(**overrides) -> SweepUIConfig:
         exit_time=TimeRange(start="15:10", end="15:10", interval_minutes=5),
         linked_ce_pe=False,
         legs=[LegUIConfig(action="SELL", option_type="CE")],
-        stoploss_enabled=False,
-        target_enabled=False,
+        overall_stoploss=OverallRiskConfig(use_percentage=False),
+        overall_target=OverallRiskConfig(use_percentage=False),
         trail_sl_enabled=False,
     )
     base.update(overrides)
@@ -137,14 +137,40 @@ def test_leg_risk_target_vs_stoploss_exclude():
 
 def test_to_sweep_config_adds_target_vs_stoploss_exclude():
     cfg = _base_cfg(
-        stoploss_enabled=True,
-        stoploss_pct=NumericRange(min=20, max=20, step=10),
-        target_enabled=True,
-        target_pct=NumericRange(min=10, max=30, step=10),
+        overall_stoploss=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=20, max=20, step=10)),
+        overall_target=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=10, max=30, step=10)),
     )
     combos = expand_ui_config(cfg)
     for combo in combos:
-        assert combo["target_pct"] > combo["stoploss_pct"]
+        assert combo["target"]["value"] > combo["stoploss"]["value"]
+
+
+def test_overall_risk_percentage_and_amount_union_not_cross_product():
+    cfg = _base_cfg(
+        overall_stoploss=OverallRiskConfig(
+            use_percentage=True,
+            percentage_range=NumericRange(min=20, max=30, step=10),  # 20, 30
+            use_amount=True,
+            amount_range=NumericRange(min=5000, max=5000, step=1000),  # 5000
+        ),
+    )
+    combos = expand_ui_config(cfg)
+    assert len(combos) == 3  # 2 percentage + 1 amount, unioned
+    kinds = {c["stoploss"]["kind"] for c in combos}
+    assert kinds == {"percentage", "amount"}
+
+
+def test_overall_risk_mismatched_basis_is_not_excluded():
+    """A percentage target and an amount stoploss aren't comparable, so the auto
+    exclude rule shouldn't touch that combination even if the raw numbers look wrong."""
+    cfg = _base_cfg(
+        overall_stoploss=OverallRiskConfig(use_percentage=False, use_amount=True, amount_range=NumericRange(min=100, max=100, step=10)),
+        overall_target=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=10, max=10, step=10), use_amount=False),
+    )
+    combos = expand_ui_config(cfg)
+    assert len(combos) == 1
+    assert combos[0]["stoploss"] == {"kind": "amount", "value": 100}
+    assert combos[0]["target"] == {"kind": "percentage", "value": 10}
 
 
 def test_overall_trailing_four_way_cartesian():
@@ -173,10 +199,13 @@ def test_nest_combo_reassembles_offset_mode_leg():
         "legrisk_target_pct": None,
         "legrisk_stoploss_pct": None,
         "legrisk_trail": None,
+        "overall_stoploss": None,
+        "overall_target": None,
     }
     nested = nest_combo(flat, cfg)
     assert nested["legs"] == [{"action": "SELL", "option_type": "CE", "lots": 1, "strike": "ATM"}]
-    assert nested["stoploss_pct"] is None
+    assert nested["stoploss"] is None
+    assert nested["target"] is None
     assert nested["trail_sl"] is None
     assert nested["leg_risk"] == {"target_pct": None, "stoploss_pct": None, "trail": None}
 
@@ -193,6 +222,8 @@ def test_nest_combo_reassembles_premium_closest_leg():
         "legrisk_target_pct": None,
         "legrisk_stoploss_pct": None,
         "legrisk_trail": None,
+        "overall_stoploss": None,
+        "overall_target": None,
     }
     nested = nest_combo(flat, cfg)
     assert nested["legs"] == [

@@ -38,8 +38,8 @@ def apply_combination(page: Page, selectors: Selectors, combo: dict[str, Any]) -
         resolve(leg_locator, b.leg_lots).first.fill(str(leg["lots"]))
         _apply_leg_risk(leg_locator, b, combo.get("leg_risk"))
 
-    _apply_stoploss(page, b, combo.get("stoploss_pct"))
-    _apply_target(page, b, combo.get("target_pct"))
+    _apply_stoploss(page, b, combo.get("stoploss"))
+    _apply_target(page, b, combo.get("target"))
     _apply_trail_sl(page, b, combo.get("trail_sl"))
 
     resolve(page, b.run_backtest_button).click()
@@ -75,6 +75,8 @@ def _apply_leg_risk(leg_locator, b, leg_risk: dict[str, Any] | None) -> None:
         resolve(leg_locator, b.leg_stoploss_toggle).click(force=True)
         resolve(leg_locator, b.leg_stoploss_type).first.select_option(label="Percent (%)")
         resolve(leg_locator, b.leg_stoploss_value).fill(str(leg_risk["stoploss_pct"]))
+    # (leg-level target/stoploss are percent-only per the original request - unlike the
+    # overall stoploss/target below, which now also supports an absolute-amount basis)
 
     trail = leg_risk.get("trail")
     if trail is not None:
@@ -93,23 +95,25 @@ def _set_instrument(page: Page, b, instrument: str) -> None:
     listbox.get_by_role("option", name=re.compile(rf"^{re.escape(instrument)}\b")).click()
 
 
-def _apply_stoploss(page: Page, b, stoploss_pct) -> None:
-    if stoploss_pct is None:
+def _apply_stoploss(page: Page, b, stoploss: dict[str, Any] | None) -> None:
+    if stoploss is None:
         return
     # force=True: a normal click's actionability check silently misses these custom
     # toggle-switch buttons under headless Chromium (confirmed during the smoke test -
     # the click "succeeds" but the switch never flips without force).
     resolve(page, b.stoploss_toggle).click(force=True)
-    resolve(page, b.stoploss_type).select_option(label="Total Premium %")
-    resolve(page, b.stoploss_value).fill(str(stoploss_pct))
+    label = "Total Premium %" if stoploss["kind"] == "percentage" else "Max Loss"
+    resolve(page, b.stoploss_type).select_option(label=label)
+    resolve(page, b.stoploss_value).fill(str(stoploss["value"]))
 
 
-def _apply_target(page: Page, b, target_pct) -> None:
-    if target_pct is None:
+def _apply_target(page: Page, b, target: dict[str, Any] | None) -> None:
+    if target is None:
         return
     resolve(page, b.target_toggle).click(force=True)
-    resolve(page, b.target_type).select_option(label="Total Premium %")
-    resolve(page, b.target_value).fill(str(target_pct))
+    label = "Total Premium %" if target["kind"] == "percentage" else "Max Profit"
+    resolve(page, b.target_type).select_option(label=label)
+    resolve(page, b.target_value).fill(str(target["value"]))
 
 
 def _apply_trail_sl(page: Page, b, trail_sl) -> None:

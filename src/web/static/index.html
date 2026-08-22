@@ -281,18 +281,50 @@
 
   <section class="card">
     <h2>Overall Stop loss / Target</h2>
-    <div class="row">
-      <div class="range-group">
-        <label class="checkbox-row"><input type="checkbox" id="stoploss_enabled"> Stop loss (Total Premium %)</label>
-        <div class="field"><label>From</label><input type="number" id="stoploss_min"></div>
-        <div class="field"><label>To</label><input type="number" id="stoploss_max"></div>
-        <div class="field"><label>Interval</label><input type="number" id="stoploss_step"></div>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">
+      Either or both basis can be checked per side - tried as separate alternatives
+      (not combined together).
+    </p>
+    <div class="subsection">
+      <h3>Stop Loss</h3>
+      <div class="row">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="stoploss_use_percentage" checked> Percentage (Total Premium %)</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="stoploss_pct_min" value="20"></div>
+            <div class="field"><label>To</label><input type="number" id="stoploss_pct_max" value="50"></div>
+            <div class="field"><label>Interval</label><input type="number" id="stoploss_pct_step" value="10"></div>
+          </div>
+        </div>
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="stoploss_use_amount"> Amount (Max Loss, ₹)</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="stoploss_amt_min" value="5000"></div>
+            <div class="field"><label>To</label><input type="number" id="stoploss_amt_max" value="5000"></div>
+            <div class="field"><label>Interval</label><input type="number" id="stoploss_amt_step" value="1000"></div>
+          </div>
+        </div>
       </div>
-      <div class="range-group">
-        <label class="checkbox-row"><input type="checkbox" id="target_enabled"> Target (Total Premium %)</label>
-        <div class="field"><label>From</label><input type="number" id="target_min"></div>
-        <div class="field"><label>To</label><input type="number" id="target_max"></div>
-        <div class="field"><label>Interval</label><input type="number" id="target_step"></div>
+    </div>
+    <div class="subsection">
+      <h3>Target</h3>
+      <div class="row">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="target_use_percentage" checked> Percentage (Total Premium %)</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="target_pct_min" value="30"></div>
+            <div class="field"><label>To</label><input type="number" id="target_pct_max" value="80"></div>
+            <div class="field"><label>Interval</label><input type="number" id="target_pct_step" value="25"></div>
+          </div>
+        </div>
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="target_use_amount"> Amount (Max Profit, ₹)</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="target_amt_min" value="5000"></div>
+            <div class="field"><label>To</label><input type="number" id="target_amt_max" value="5000"></div>
+            <div class="field"><label>Interval</label><input type="number" id="target_amt_step" value="1000"></div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -335,9 +367,9 @@
     <h2>Advanced: exclude rules</h2>
     <div class="exclude-box">
       <p style="font-size:12px;color:var(--muted);margin-top:0;">
-        One Python expression per line, evaluated against each combination's own keys
-        (target_pct <= stoploss_pct is added automatically when both are enabled, same
-        for the leg-level target/stoploss).
+        One Python expression per line, evaluated against each combination's own keys.
+        A target-vs-stoploss exclude is added automatically wherever both are enabled
+        on the same basis (overall and leg-level).
       </p>
       <textarea id="exclude"></textarea>
     </div>
@@ -609,10 +641,18 @@ function collectConfig() {
       trail_percentage_x: rangeField("legrisk_trail_percentage_x", {min:1,max:1,step:0.5}),
       trail_percentage_y: rangeField("legrisk_trail_percentage_y", {min:0.5,max:0.5,step:0.5}),
     },
-    stoploss_enabled: document.getElementById("stoploss_enabled").checked,
-    stoploss_pct: rangeField("stoploss", {min:20,max:50,step:10}),
-    target_enabled: document.getElementById("target_enabled").checked,
-    target_pct: rangeField("target", {min:30,max:80,step:25}),
+    overall_stoploss: {
+      use_percentage: document.getElementById("stoploss_use_percentage").checked,
+      percentage_range: rangeField("stoploss_pct", {min:20,max:50,step:10}),
+      use_amount: document.getElementById("stoploss_use_amount").checked,
+      amount_range: rangeField("stoploss_amt", {min:5000,max:5000,step:1000}),
+    },
+    overall_target: {
+      use_percentage: document.getElementById("target_use_percentage").checked,
+      percentage_range: rangeField("target_pct", {min:30,max:80,step:25}),
+      use_amount: document.getElementById("target_use_amount").checked,
+      amount_range: rangeField("target_amt", {min:5000,max:5000,step:1000}),
+    },
     trail_sl_enabled: document.getElementById("trail_sl_enabled").checked,
     trail_sl_include_none: document.getElementById("trail_sl_include_none").checked,
     trail_sl_x: rangeField("trail_x", {min:20,max:20,step:5}),
@@ -667,10 +707,14 @@ function applyConfig(cfg) {
   setRangeField("legrisk_trail_percentage_x", lr.trail_percentage_x);
   setRangeField("legrisk_trail_percentage_y", lr.trail_percentage_y);
 
-  document.getElementById("stoploss_enabled").checked = cfg.stoploss_enabled;
-  setRangeField("stoploss", cfg.stoploss_pct);
-  document.getElementById("target_enabled").checked = cfg.target_enabled;
-  setRangeField("target", cfg.target_pct);
+  document.getElementById("stoploss_use_percentage").checked = cfg.overall_stoploss.use_percentage;
+  setRangeField("stoploss_pct", cfg.overall_stoploss.percentage_range);
+  document.getElementById("stoploss_use_amount").checked = cfg.overall_stoploss.use_amount;
+  setRangeField("stoploss_amt", cfg.overall_stoploss.amount_range);
+  document.getElementById("target_use_percentage").checked = cfg.overall_target.use_percentage;
+  setRangeField("target_pct", cfg.overall_target.percentage_range);
+  document.getElementById("target_use_amount").checked = cfg.overall_target.use_amount;
+  setRangeField("target_amt", cfg.overall_target.amount_range);
   document.getElementById("trail_sl_enabled").checked = cfg.trail_sl_enabled;
   document.getElementById("trail_sl_include_none").checked = cfg.trail_sl_include_none;
   setRangeField("trail_x", cfg.trail_sl_x);
@@ -684,7 +728,46 @@ function applyConfig(cfg) {
   document.getElementById("headless").checked = cfg.headless;
   document.getElementById("result_timeout").value = cfg.result_timeout;
   document.getElementById("max_retries").value = cfg.max_retries;
+
+  syncAllEnableStates();
 }
+
+// --- Grey out range fields whose "enable" checkbox is unchecked, so it's obvious
+// at a glance which dimensions are actually part of the sweep. ---
+
+const ENABLE_BINDINGS = [
+  {checkbox: "stoploss_use_percentage", prefixes: ["stoploss_pct"], extra: []},
+  {checkbox: "stoploss_use_amount", prefixes: ["stoploss_amt"], extra: []},
+  {checkbox: "target_use_percentage", prefixes: ["target_pct"], extra: []},
+  {checkbox: "target_use_amount", prefixes: ["target_amt"], extra: []},
+  {checkbox: "trail_sl_enabled", prefixes: ["trail_x", "trail_y", "trail_step", "trail_trail_by"], extra: ["trail_sl_include_none"]},
+  {checkbox: "legrisk_target_enabled", prefixes: ["legrisk_target"], extra: []},
+  {checkbox: "legrisk_stoploss_enabled", prefixes: ["legrisk_stoploss"], extra: []},
+  {checkbox: "legrisk_trail_points_enabled", prefixes: ["legrisk_trail_points_x", "legrisk_trail_points_y"], extra: []},
+  {checkbox: "legrisk_trail_percentage_enabled", prefixes: ["legrisk_trail_percentage_x", "legrisk_trail_percentage_y"], extra: []},
+];
+
+function syncEnableBinding(b) {
+  const enabled = document.getElementById(b.checkbox).checked;
+  b.prefixes.forEach(p => ["_min", "_max", "_step"].forEach(suffix => {
+    const el = document.getElementById(p + suffix);
+    if (el) el.disabled = !enabled;
+  }));
+  b.extra.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !enabled; });
+}
+
+function syncAllEnableStates() {
+  ENABLE_BINDINGS.forEach(syncEnableBinding);
+}
+
+function initEnableBindings() {
+  ENABLE_BINDINGS.forEach(b => {
+    document.getElementById(b.checkbox).addEventListener("change", () => syncEnableBinding(b));
+  });
+  syncAllEnableStates();
+}
+
+initEnableBindings();
 
 async function loadConfig() {
   const res = await fetch("/api/config");

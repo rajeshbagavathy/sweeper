@@ -64,6 +64,17 @@ class LegUIConfig(BaseModel):
     strike: StrikeConfig = Field(default_factory=StrikeConfig)
 
 
+class OverallRiskConfig(BaseModel):
+    """Overall Stop Loss / Target: AlgoTest offers a percentage-of-premium basis
+    ("Total Premium %") and an absolute-amount basis ("Max Loss" / "Max Profit").
+    Either or both can be checked - unioned into one sweep dimension, not crossed."""
+
+    use_percentage: bool = True
+    percentage_range: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=50, step=10))
+    use_amount: bool = False
+    amount_range: NumericRange = Field(default_factory=lambda: NumericRange(min=5000, max=5000, step=1000))
+
+
 class LegRiskConfig(BaseModel):
     """Per-leg Target Profit / Stop Loss / Trail SL - shared identically across every
     leg (CE and PE both), per the user's simplification request."""
@@ -112,11 +123,10 @@ class SweepUIConfig(BaseModel):
     # stoploss/target/trailing below, which apply once to the whole combined position).
     leg_risk: LegRiskConfig = Field(default_factory=LegRiskConfig)
 
-    stoploss_enabled: bool = True
-    stoploss_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=50, step=10))
-
-    target_enabled: bool = True
-    target_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=30, max=80, step=25))
+    overall_stoploss: OverallRiskConfig = Field(default_factory=OverallRiskConfig)
+    overall_target: OverallRiskConfig = Field(
+        default_factory=lambda: OverallRiskConfig(percentage_range=NumericRange(min=30, max=80, step=25))
+    )
 
     # Overall trailing always uses AlgoTest's "Lock and Trail" mode when enabled - it's
     # the only mode exposing all 4 of these fields (confirmed live).

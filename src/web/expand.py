@@ -7,7 +7,7 @@ import yaml
 
 from src.config import SweepConfig
 from src.sweep import expand as expand_flat
-from src.web.models import LegRiskConfig, LegUIConfig, StrikeConfig, SweepUIConfig
+from src.web.models import LegRiskConfig, LegUIConfig, OverallRiskConfig, StrikeConfig, SweepUIConfig
 
 UI_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "sweep_ui.yaml"
 
@@ -62,6 +62,19 @@ def _trail_choices(leg_risk: LegRiskConfig) -> list[dict[str, Any] | None]:
     return choices
 
 
+def _overall_risk_choices(risk: OverallRiskConfig) -> list[dict[str, Any] | None]:
+    """Union of percentage-basis ("Total Premium %") and amount-basis ("Max Loss" /
+    "Max Profit") choices - either or both, not crossed."""
+    choices: list[dict[str, Any] | None] = []
+    if risk.use_percentage:
+        choices += [{"kind": "percentage", "value": v} for v in risk.percentage_range.as_list()]
+    if risk.use_amount:
+        choices += [{"kind": "amount", "value": v} for v in risk.amount_range.as_list()]
+    if not choices:
+        choices = [None]
+    return choices
+
+
 def _add_leg_risk_vary(vary: dict[str, Any], leg_risk: LegRiskConfig) -> None:
     vary[f"{_LEGRISK_PREFIX}target_pct"] = leg_risk.target_pct.as_list() if leg_risk.target_enabled else [None]
     vary[f"{_LEGRISK_PREFIX}stoploss_pct"] = leg_risk.stoploss_pct.as_list() if leg_risk.stoploss_enabled else [None]
@@ -99,12 +112,15 @@ def to_sweep_config(cfg: SweepUIConfig) -> SweepConfig:
             f"and {_LEGRISK_PREFIX}target_pct <= {_LEGRISK_PREFIX}stoploss_pct"
         )
 
-    if cfg.stoploss_enabled:
-        vary["stoploss_pct"] = cfg.stoploss_pct.as_list()
-    if cfg.target_enabled:
-        vary["target_pct"] = cfg.target_pct.as_list()
-        if cfg.stoploss_enabled:
-            exclude.append("target_pct is not None and stoploss_pct is not None and target_pct <= stoploss_pct")
+    vary["overall_stoploss"] = _overall_risk_choices(cfg.overall_stoploss)
+    vary["overall_target"] = _overall_risk_choices(cfg.overall_target)
+    # Only meaningful to compare when both landed on the same basis (a percentage and
+    # an absolute amount aren't comparable) - otherwise leave the combination in.
+    exclude.append(
+        "overall_target is not None and overall_stoploss is not None "
+        "and overall_target['kind'] == overall_stoploss['kind'] "
+        "and overall_target['value'] <= overall_stoploss['value']"
+    )
 
     if cfg.trail_sl_enabled:
         pairs: list[Any] = [
@@ -152,8 +168,8 @@ def nest_combo(flat_combo: dict[str, Any], cfg: SweepUIConfig) -> dict[str, Any]
         "trail": combo.pop(f"{_LEGRISK_PREFIX}trail"),
     }
 
-    combo.setdefault("stoploss_pct", None)
-    combo.setdefault("target_pct", None)
+    combo["stoploss"] = combo.pop("overall_stoploss")
+    combo["target"] = combo.pop("overall_target")
     combo.setdefault("trail_sl", None)
 
     return combo
