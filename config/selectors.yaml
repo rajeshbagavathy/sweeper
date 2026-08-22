@@ -1,0 +1,61 @@
+# AlgoTest UI selectors.
+#
+# Fill in every blank value below using the Playwright Inspector's element picker
+# (run `uv run python tools/record.py`, then click "Pick locator" in the Inspector
+# toolbar and click the corresponding element on the page).
+#
+# Each value can be either:
+#   - a raw Playwright selector string, e.g. "#email" or "text=Run Backtest"
+#   - a role-based locator object, e.g. {role: button, name: "Run Backtest"}
+# Prefer the role-based form wherever the Inspector suggests a get_by_role /
+# get_by_label / get_by_text locator — it survives AlgoTest's generated React class
+# names far better than a raw CSS selector chain.
+
+login:
+  email_input:
+  password_input:
+  submit_button:
+  logged_in_marker:      # something only present after successful login
+
+builder:
+  url:
+  instrument_select:     # NIFTY / BANKNIFTY / SENSEX
+  start_date_input:
+  end_date_input:
+  # --- per-leg controls (the app will index these for leg 1..N) ---
+  add_leg_button:
+  leg_row:               # repeating container; app uses .nth(i)
+  leg_action:            # Buy / Sell
+  leg_option_type:       # CE / PE
+  leg_strike_selector:   # ATM, ATM+100, etc.
+  leg_lots:
+  # --- entry / exit ---
+  entry_time_input:
+  exit_time_input:
+  # --- risk management ---
+  stoploss_type:
+  stoploss_value:
+  target_type:
+  target_value:
+  trail_sl_toggle:
+  trail_sl_x:
+  trail_sl_y:
+  reentry_type:
+  reentry_count:
+  # --- run ---
+  run_backtest_button:
+
+results:
+  ready_marker:          # element that only appears when results are rendered
+  running_marker:        # spinner / "running" indicator, to wait for disappearance
+  error_marker:          # error toast or message
+  metrics:               # label -> selector for each metric on the results panel
+    total_pnl:
+    max_drawdown:
+    win_rate:
+    total_trades:
+    avg_profit_per_trade:
+    avg_loss_per_trade:
+    max_profit:
+    max_loss:
+    expectancy:
