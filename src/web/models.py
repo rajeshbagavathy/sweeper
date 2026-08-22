@@ -141,6 +141,13 @@ class SweepUIConfig(BaseModel):
     limit: int | None = None
     shuffle: bool = False
 
+    # Results-panel settings applied once results are ready, before scraping - not
+    # sweep dimensions, the same setting is used for every combination. Brokerage and
+    # taxes & charges are always turned on (not exposed as a toggle) per the request
+    # that prompted this.
+    slippage_pct: float = 1.0
+    dte_values: list[int] = Field(default_factory=lambda: [0])
+
     delay: float = 2.0
     headless: bool = False
     result_timeout: int = 180

@@ -67,6 +67,12 @@ class ResultsSelectors:
     ready_marker: SelectorValue
     running_marker: SelectorValue
     error_marker: SelectorValue
+    include_brokerage_toggle: SelectorValue
+    include_taxes_toggle: SelectorValue
+    slippage_input: SelectorValue
+    recalculate_button: SelectorValue
+    dte_filter_add_button: SelectorValue
+    dte_filter_value_trigger: SelectorValue
     metrics: dict[str, SelectorValue] = field(default_factory=dict)
 
 

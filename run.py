@@ -6,6 +6,7 @@
     python run.py --limit 5                  # smoke test
     python run.py --resume output/results_20260822_1030.csv
     python run.py --only-failed <csv>        # retry just the error rows
+    python run.py --slippage 1.5 --dte 0,1,2 # results-panel settings applied before scraping
 """
 
 from __future__ import annotations
@@ -41,6 +42,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only-failed", metavar="CSV", help="retry only the combos marked status=error in CSV")
     parser.add_argument("--result-timeout", type=int, default=180, help="seconds to wait for one backtest result (default: 180)")
     parser.add_argument("--max-retries", type=int, default=2, help="retries per combo before giving up (default: 2)")
+    parser.add_argument("--slippage", type=float, default=1.0, help="slippage %% applied on the results panel before scraping (default: 1)")
+    parser.add_argument("--dte", default="0", help="comma-separated DTE filter values, e.g. '0,1,2' (default: 0)")
     return parser.parse_args()
 
 
@@ -87,6 +90,7 @@ def main() -> int:
 
     email = os.environ.get("ALGOTEST_EMAIL")
     password = os.environ.get("ALGOTEST_PASSWORD")
+    dte_values = [int(v.strip()) for v in args.dte.split(",") if v.strip()]
 
     with browser.persistent_context(headless=args.headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
@@ -111,6 +115,8 @@ def main() -> int:
             max_retries=args.max_retries,
             email=email,
             password=password,
+            slippage_pct=args.slippage,
+            dte_values=dte_values,
         )
 
     print(f"\nDone. ok={stats['ok']} error={stats['error']} skipped={stats['skipped']}")

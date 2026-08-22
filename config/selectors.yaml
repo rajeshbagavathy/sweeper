@@ -113,6 +113,27 @@ results:
   # succeeded), so this is an educated guess, not a confirmed selector. Please cause one
   # real error (e.g. temporarily set an invalid date range) and check what appears.
   error_marker: "[role=\"alert\"]:not(#__next-route-announcer__), [class*=\"toast\"]"  # excludes Next.js's always-present, visually-hidden route announcer (a confirmed false positive caught during the Phase 1 smoke test)
+
+  # --- brokerage/taxes/slippage recalculation + DTE filter, applied once results are
+  # ready and before scraping metrics. Confirmed live: changing these actually changes
+  # the scraped numbers (e.g. Overall Profit), so order matters - always apply these
+  # before reading metrics, never after. ---
+  include_brokerage_toggle: "[data-test-id=\"toggle-toggle--result-brokerage_include_backtest\"]"
+  include_taxes_toggle: "[data-test-id=\"toggle-toggle--result_include_backtest\"]"
+  slippage_input: "div:has(> p:has-text(\"Slippage\")) input[type=\"number\"]"
+  # NEEDS-CHECK: there are 3 "Re-calculate" buttons on the results page (this one,
+  # Select VIX Range, and In/Out Sample Split Date) - this is confirmed to be the
+  # *first* one in DOM order, matching this one specifically, but that's positional,
+  # not a unique attribute. Re-check if AlgoTest ever reorders these sections.
+  recalculate_button: "button:has-text(\"Re-calculate\")"   # use .first
+  # Clicking this ADDS the DTE filter chip (defaults to "0" pre-checked) - only click
+  # it once per fresh page load, right before setting values.
+  dte_filter_add_button: "p:text-is(\"Filter by\") + div button:has-text(\"DTE\")"
+  # The value-picker that appears after adding the filter - a true multi-select
+  # (checkbox list with "Select All"), confirmed live. Click to open, then find
+  # role=option elements with exact "0".."6" text inside the opened [role="listbox"].
+  dte_filter_value_trigger: "p:text-is(\"Filter by\") + div > div"
+
   metrics:                    # confirmed: label -> value pairs in a 3-column results table
     total_pnl: "tr:has-text(\"Overall Profit\") td:nth-child(2)"
     max_drawdown: "tr:has-text(\"Max Drawdown\"):not(:has-text(\"Duration\")) td:nth-child(2)"  # excludes the separate "Duration of Max Drawdown" row, which also contains this substring

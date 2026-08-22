@@ -21,7 +21,7 @@ from rich.progress import (
 from src.auth import LoginNotConfigured, ensure_logged_in, is_logged_in
 from src.config import Selectors
 from src.form import apply_combination
-from src.results import parse_number, scrape_metrics, wait_for_result
+from src.results import apply_result_settings, parse_number, scrape_metrics, wait_for_result
 from src.store import append_row, combo_id, flatten
 
 SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "screenshots"
@@ -41,6 +41,8 @@ def run_sweep(
     max_retries: int = 2,
     email: str | None = None,
     password: str | None = None,
+    slippage_pct: float = 1.0,
+    dte_values: list[int] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> dict[str, int]:
@@ -98,6 +100,8 @@ def run_sweep(
                 max_retries=max_retries,
                 email=email,
                 password=password,
+                slippage_pct=slippage_pct,
+                dte_values=dte_values or [],
             )
 
             progress.advance(task)
@@ -126,6 +130,8 @@ def _run_one_combo(
     max_retries: int,
     email: str | None,
     password: str | None,
+    slippage_pct: float,
+    dte_values: list[int],
 ) -> None:
     attempt = 0
     backoff_s = 1.0
@@ -144,6 +150,10 @@ def _run_one_combo(
             outcome = wait_for_result(page, selectors, timeout_s=result_timeout_s)
             if outcome.status != "ok":
                 raise RuntimeError(f"{outcome.status}: {outcome.error}")
+
+            # Brokerage/taxes/slippage + DTE filter change the scraped numbers, so
+            # they must be applied before step 8, not after.
+            apply_result_settings(page, selectors, slippage_pct, dte_values)
 
             # Step 8: scrape + parse.
             raw_metrics = scrape_metrics(page, selectors)

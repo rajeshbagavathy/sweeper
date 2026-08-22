@@ -134,6 +134,8 @@ class RunState:
                     max_retries=cfg.max_retries,
                     email=os.environ.get("ALGOTEST_EMAIL"),
                     password=os.environ.get("ALGOTEST_PASSWORD"),
+                    slippage_pct=cfg.slippage_pct,
+                    dte_values=cfg.dte_values,
                     on_progress=self._on_progress,
                     stop_event=stop_event,
                 )
