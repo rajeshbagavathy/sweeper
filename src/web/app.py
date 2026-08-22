@@ -58,6 +58,13 @@ def get_status() -> dict:
     return run_state.snapshot()
 
 
+def _rmdd_sort_key(row: dict) -> float:
+    try:
+        return float(row.get("return_max_dd", ""))
+    except (TypeError, ValueError):
+        return float("-inf")  # missing/error rows sink to the bottom, never crash the sort
+
+
 @app.get("/api/results")
 def get_results(limit: int = 50) -> dict:
     snapshot = run_state.snapshot()
@@ -70,4 +77,5 @@ def get_results(limit: int = 50) -> dict:
         columns = reader.fieldnames or []
         rows = list(reader)
 
-    return {"rows": rows[-limit:][::-1], "columns": columns}
+    rows.sort(key=_rmdd_sort_key, reverse=True)
+    return {"rows": rows[:limit], "columns": columns}

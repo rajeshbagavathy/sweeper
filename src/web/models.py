@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class NumericRange(BaseModel):
     min: float
     max: float
-    step: float = 1.0
+    step: float = 1.0  # the interval between consecutive values, e.g. min=10 max=120 step=5 -> 10, 15, 20, ... 120
 
     def as_list(self) -> list[float]:
         if self.max <= self.min:
@@ -27,9 +27,13 @@ class TimeRange(BaseModel):
     start: str  # "HH:MM"
     end: str
     interval_minutes: int = 15
+    fixed: bool = False  # UI convenience: when true, the frontend mirrors start into end
 
     def as_list(self) -> list[str]:
         from datetime import datetime, timedelta
+
+        if self.fixed:
+            return [self.start]
 
         start = datetime.strptime(self.start, "%H:%M")
         end = datetime.strptime(self.end, "%H:%M")
@@ -43,18 +47,42 @@ class TimeRange(BaseModel):
         return values
 
 
-StrikeMode = Literal["offset", "premium_range", "premium_closest"]
+class StrikeConfig(BaseModel):
+    """Either or both of these can be on - the sweep tries the union of both sets of
+    strike choices, not their cross product (see src/web/expand.py)."""
+
+    use_offset: bool = True
+    offsets: list[str] = Field(default_factory=lambda: ["ATM"])
+    use_closest_premium: bool = False
+    premium_range: NumericRange = Field(default_factory=lambda: NumericRange(min=30, max=30, step=5))
 
 
 class LegUIConfig(BaseModel):
     action: Literal["BUY", "SELL"] = "SELL"
     option_type: Literal["CE", "PE"] = "CE"
     lots: NumericRange = Field(default_factory=lambda: NumericRange(min=1, max=1, step=1))
-    strike_mode: StrikeMode = "offset"
-    offsets: list[str] = Field(default_factory=lambda: ["ATM"])
-    premium_lower: NumericRange = Field(default_factory=lambda: NumericRange(min=30, max=30, step=5))
-    premium_upper: NumericRange = Field(default_factory=lambda: NumericRange(min=55, max=55, step=5))
-    premium_value: NumericRange = Field(default_factory=lambda: NumericRange(min=30, max=30, step=5))
+    strike: StrikeConfig = Field(default_factory=StrikeConfig)
+
+
+class LegRiskConfig(BaseModel):
+    """Per-leg Target Profit / Stop Loss / Trail SL - shared identically across every
+    leg (CE and PE both), per the user's simplification request."""
+
+    target_enabled: bool = False
+    target_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=20, step=10))
+
+    stoploss_enabled: bool = False
+    stoploss_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=20, step=10))
+
+    # Each trailing type gets its own from/to/interval pair; checking both tries the
+    # union of Points-mode combos and Percentage-mode combos (not their cross product).
+    trail_points_enabled: bool = False
+    trail_points_x: NumericRange = Field(default_factory=lambda: NumericRange(min=10, max=10, step=5))
+    trail_points_y: NumericRange = Field(default_factory=lambda: NumericRange(min=5, max=5, step=5))
+
+    trail_percentage_enabled: bool = False
+    trail_percentage_x: NumericRange = Field(default_factory=lambda: NumericRange(min=1, max=1, step=0.5))
+    trail_percentage_y: NumericRange = Field(default_factory=lambda: NumericRange(min=0.5, max=0.5, step=0.5))
 
 
 class SweepUIConfig(BaseModel):
@@ -79,16 +107,25 @@ class SweepUIConfig(BaseModel):
         ]
     )
 
+    # Leg-level risk management - always one shared config applied to every leg,
+    # regardless of linked_ce_pe (separate AlgoTest feature from the overall
+    # stoploss/target/trailing below, which apply once to the whole combined position).
+    leg_risk: LegRiskConfig = Field(default_factory=LegRiskConfig)
+
     stoploss_enabled: bool = True
     stoploss_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=50, step=10))
 
     target_enabled: bool = True
     target_pct: NumericRange = Field(default_factory=lambda: NumericRange(min=30, max=80, step=25))
 
+    # Overall trailing always uses AlgoTest's "Lock and Trail" mode when enabled - it's
+    # the only mode exposing all 4 of these fields (confirmed live).
     trail_sl_enabled: bool = False
     trail_sl_include_none: bool = True
-    trail_sl_x: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=20, step=5))
-    trail_sl_y: NumericRange = Field(default_factory=lambda: NumericRange(min=10, max=10, step=5))
+    trail_sl_x: NumericRange = Field(default_factory=lambda: NumericRange(min=20, max=20, step=5))  # "If profit reaches"
+    trail_sl_y: NumericRange = Field(default_factory=lambda: NumericRange(min=10, max=10, step=5))  # "Lock profit"
+    trail_sl_step: NumericRange = Field(default_factory=lambda: NumericRange(min=10, max=10, step=5))  # "For every increase in profit by"
+    trail_sl_trail_by: NumericRange = Field(default_factory=lambda: NumericRange(min=5, max=5, step=5))  # "Trail profit by"
 
     exclude: list[str] = Field(default_factory=list)
     limit: int | None = None

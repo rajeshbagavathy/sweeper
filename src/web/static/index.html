@@ -31,7 +31,8 @@
   header h1 { margin: 0; font-size: 20px; }
   header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
   main {
-    max-width: 980px;
+    max-width: 1600px;
+    width: 95%;
     margin: 0 auto;
     padding: 24px 20px 80px;
     display: flex;
@@ -49,6 +50,12 @@
     font-size: 15px;
     font-weight: 600;
   }
+  section.card h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+  }
   .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
   .field label { font-size: 12px; color: var(--muted); }
@@ -61,6 +68,7 @@
     background: #fff;
     color: var(--text);
   }
+  input:disabled, select:disabled { background: #f3f4f6; color: var(--muted); }
   select[multiple] { min-height: 110px; }
   .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .range-group {
@@ -72,6 +80,12 @@
     padding: 8px 10px;
   }
   .range-group .field { min-width: 70px; }
+  .subsection {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
   .leg {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -159,15 +173,17 @@
     <div class="row">
       <div class="range-group">
         <strong style="font-size:12px;">Entry time</strong>
-        <div class="field"><label>From</label><input type="time" id="entry_start"></div>
+        <div class="field"><label>From</label><input type="time" id="entry_start" onchange="onFixedTimeChange('entry')"></div>
         <div class="field"><label>To</label><input type="time" id="entry_end"></div>
         <div class="field"><label>Every (min)</label><input type="number" id="entry_interval" min="1" value="15"></div>
+        <label class="checkbox-row"><input type="checkbox" id="entry_fixed" onchange="onFixedTimeToggle('entry')"> Fixed</label>
       </div>
       <div class="range-group">
         <strong style="font-size:12px;">Exit time</strong>
-        <div class="field"><label>From</label><input type="time" id="exit_start"></div>
+        <div class="field"><label>From</label><input type="time" id="exit_start" onchange="onFixedTimeChange('exit')"></div>
         <div class="field"><label>To</label><input type="time" id="exit_end"></div>
         <div class="field"><label>Every (min)</label><input type="number" id="exit_interval" min="1" value="5"></div>
+        <label class="checkbox-row"><input type="checkbox" id="exit_fixed" onchange="onFixedTimeToggle('exit')"> Fixed</label>
       </div>
     </div>
   </section>
@@ -193,41 +209,124 @@
   </section>
 
   <section class="card">
-    <h2>Stop loss / Target</h2>
-    <div class="row">
+    <h2>Leg-level risk management</h2>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">
+      AlgoTest's per-leg Target Profit / Stop Loss / Trail SL. Applied identically to
+      every leg (CE and PE both), separate from the overall strategy settings below.
+    </p>
+
+    <div class="subsection">
+      <h3>Target Profit (Percent %)</h3>
+      <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_target_enabled"> Enable</label>
       <div class="range-group">
-        <label class="checkbox-row"><input type="checkbox" id="stoploss_enabled"> Stop loss (Total Premium %)</label>
-        <div class="field"><label>Min</label><input type="number" id="stoploss_min"></div>
-        <div class="field"><label>Max</label><input type="number" id="stoploss_max"></div>
-        <div class="field"><label>Step</label><input type="number" id="stoploss_step"></div>
+        <div class="field"><label>From</label><input type="number" id="legrisk_target_min" value="20"></div>
+        <div class="field"><label>To</label><input type="number" id="legrisk_target_max" value="20"></div>
+        <div class="field"><label>Interval</label><input type="number" id="legrisk_target_step" value="10"></div>
       </div>
+    </div>
+
+    <div class="subsection">
+      <h3>Stop Loss (Percent %)</h3>
+      <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_stoploss_enabled"> Enable</label>
       <div class="range-group">
-        <label class="checkbox-row"><input type="checkbox" id="target_enabled"> Target (Total Premium %)</label>
-        <div class="field"><label>Min</label><input type="number" id="target_min"></div>
-        <div class="field"><label>Max</label><input type="number" id="target_max"></div>
-        <div class="field"><label>Step</label><input type="number" id="target_step"></div>
+        <div class="field"><label>From</label><input type="number" id="legrisk_stoploss_min" value="20"></div>
+        <div class="field"><label>To</label><input type="number" id="legrisk_stoploss_max" value="20"></div>
+        <div class="field"><label>Interval</label><input type="number" id="legrisk_stoploss_step" value="10"></div>
+      </div>
+    </div>
+
+    <div class="subsection">
+      <h3>Trail SL</h3>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Check either or both - each gets its own range, tried as separate alternatives (not combined).</p>
+      <div class="row">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_trail_points_enabled"> Points</label>
+          <div class="row">
+            <div class="range-group">
+              <strong style="font-size:12px;">X</strong>
+              <div class="field"><label>From</label><input type="number" id="legrisk_trail_points_x_min" value="10"></div>
+              <div class="field"><label>To</label><input type="number" id="legrisk_trail_points_x_max" value="10"></div>
+              <div class="field"><label>Interval</label><input type="number" id="legrisk_trail_points_x_step" value="5"></div>
+            </div>
+            <div class="range-group">
+              <strong style="font-size:12px;">Y</strong>
+              <div class="field"><label>From</label><input type="number" id="legrisk_trail_points_y_min" value="5"></div>
+              <div class="field"><label>To</label><input type="number" id="legrisk_trail_points_y_max" value="5"></div>
+              <div class="field"><label>Interval</label><input type="number" id="legrisk_trail_points_y_step" value="5"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_trail_percentage_enabled"> Percentage</label>
+          <div class="row">
+            <div class="range-group">
+              <strong style="font-size:12px;">X</strong>
+              <div class="field"><label>From</label><input type="number" id="legrisk_trail_percentage_x_min" value="1" step="0.1"></div>
+              <div class="field"><label>To</label><input type="number" id="legrisk_trail_percentage_x_max" value="1" step="0.1"></div>
+              <div class="field"><label>Interval</label><input type="number" id="legrisk_trail_percentage_x_step" value="0.5" step="0.1"></div>
+            </div>
+            <div class="range-group">
+              <strong style="font-size:12px;">Y</strong>
+              <div class="field"><label>From</label><input type="number" id="legrisk_trail_percentage_y_min" value="0.5" step="0.1"></div>
+              <div class="field"><label>To</label><input type="number" id="legrisk_trail_percentage_y_max" value="0.5" step="0.1"></div>
+              <div class="field"><label>Interval</label><input type="number" id="legrisk_trail_percentage_y_step" value="0.5" step="0.1"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Trailing SL (Lock mode: "If profit reaches X, lock Y")</h2>
+    <h2>Overall Stop loss / Target</h2>
+    <div class="row">
+      <div class="range-group">
+        <label class="checkbox-row"><input type="checkbox" id="stoploss_enabled"> Stop loss (Total Premium %)</label>
+        <div class="field"><label>From</label><input type="number" id="stoploss_min"></div>
+        <div class="field"><label>To</label><input type="number" id="stoploss_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="stoploss_step"></div>
+      </div>
+      <div class="range-group">
+        <label class="checkbox-row"><input type="checkbox" id="target_enabled"> Target (Total Premium %)</label>
+        <div class="field"><label>From</label><input type="number" id="target_min"></div>
+        <div class="field"><label>To</label><input type="number" id="target_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="target_step"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Overall Trailing SL ("Lock and Trail" mode)</h2>
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="trail_sl_enabled"> Enable</label>
       <label class="checkbox-row"><input type="checkbox" id="trail_sl_include_none" checked> Also try "no trailing SL"</label>
     </div>
     <div class="row" style="margin-top:10px;">
       <div class="range-group">
-        <strong style="font-size:12px;">If profit reaches (X)</strong>
-        <div class="field"><label>Min</label><input type="number" id="trail_x_min"></div>
-        <div class="field"><label>Max</label><input type="number" id="trail_x_max"></div>
-        <div class="field"><label>Step</label><input type="number" id="trail_x_step"></div>
+        <strong style="font-size:12px;">If profit reaches</strong>
+        <div class="field"><label>From</label><input type="number" id="trail_x_min"></div>
+        <div class="field"><label>To</label><input type="number" id="trail_x_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="trail_x_step"></div>
       </div>
       <div class="range-group">
-        <strong style="font-size:12px;">Lock profit (Y)</strong>
-        <div class="field"><label>Min</label><input type="number" id="trail_y_min"></div>
-        <div class="field"><label>Max</label><input type="number" id="trail_y_max"></div>
-        <div class="field"><label>Step</label><input type="number" id="trail_y_step"></div>
+        <strong style="font-size:12px;">Lock profit</strong>
+        <div class="field"><label>From</label><input type="number" id="trail_y_min"></div>
+        <div class="field"><label>To</label><input type="number" id="trail_y_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="trail_y_step"></div>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">For every increase in profit by</strong>
+        <div class="field"><label>From</label><input type="number" id="trail_step_min"></div>
+        <div class="field"><label>To</label><input type="number" id="trail_step_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="trail_step_step"></div>
+      </div>
+      <div class="range-group">
+        <strong style="font-size:12px;">Trail profit by</strong>
+        <div class="field"><label>From</label><input type="number" id="trail_trail_by_min"></div>
+        <div class="field"><label>To</label><input type="number" id="trail_trail_by_max"></div>
+        <div class="field"><label>Interval</label><input type="number" id="trail_trail_by_step"></div>
       </div>
     </div>
   </section>
@@ -237,7 +336,8 @@
     <div class="exclude-box">
       <p style="font-size:12px;color:var(--muted);margin-top:0;">
         One Python expression per line, evaluated against each combination's own keys
-        (target_pct <= stoploss_pct is added automatically when both are enabled).
+        (target_pct <= stoploss_pct is added automatically when both are enabled, same
+        for the leg-level target/stoploss).
       </p>
       <textarea id="exclude"></textarea>
     </div>
@@ -280,7 +380,7 @@
   </section>
 
   <section class="card">
-    <h2>Results</h2>
+    <h2>Results <span style="font-weight:400; color:var(--muted); font-size:12px;">(sorted by Return/MaxDD, highest first)</span></h2>
     <div class="table-scroll">
       <table id="resultsTable"><thead></thead><tbody></tbody></table>
     </div>
@@ -315,26 +415,29 @@ function setRangeField(idPrefix, r) {
   if (document.getElementById(idPrefix + "_step")) document.getElementById(idPrefix + "_step").value = r.step;
 }
 
-// Lots + strike-mode fields, shared between a per-leg card and the single shared panel.
-// Fully self-contained (balanced divs) so callers can just drop this in.
-function strikeAndLotsFieldsHTML(prefix) {
+// --- Entry/Exit "Fixed" checkbox ---
+
+function onFixedTimeToggle(which) {
+  const fixed = document.getElementById(`${which}_fixed`).checked;
+  document.getElementById(`${which}_end`).disabled = fixed;
+  document.getElementById(`${which}_interval`).disabled = fixed;
+  if (fixed) document.getElementById(`${which}_end`).value = document.getElementById(`${which}_start`).value;
+}
+
+function onFixedTimeChange(which) {
+  if (document.getElementById(`${which}_fixed`).checked) {
+    document.getElementById(`${which}_end`).value = document.getElementById(`${which}_start`).value;
+  }
+}
+
+// --- Strike config: two independent checkboxes (union, not radio) ---
+
+function strikeFieldsHTML(prefix) {
   const offsetOptions = STRIKE_OFFSETS.map(o => `<option value="${o}">${o}</option>`).join("");
   return `
-  <div class="row">
-    <div class="range-group">
-      <strong style="font-size:12px;">Lots</strong>
-      <div class="field"><label>Min</label><input type="number" id="${prefix}_lots_min" value="1"></div>
-      <div class="field"><label>Max</label><input type="number" id="${prefix}_lots_max" value="1"></div>
-      <div class="field"><label>Step</label><input type="number" id="${prefix}_lots_step" value="1"></div>
-    </div>
-    <div class="field">
-      <label>Strike mode</label>
-      <select id="${prefix}_strike_mode" onchange="updateStrikeModeVisibility('${prefix}')">
-        <option value="offset">ATM / OTM / ITM offset</option>
-        <option value="premium_range">Premium range</option>
-        <option value="premium_closest">Closest premium</option>
-      </select>
-    </div>
+  <div class="row" style="margin-top:8px;">
+    <label class="checkbox-row"><input type="checkbox" id="${prefix}_use_offset" checked onchange="updateStrikeVisibility('${prefix}')"> Strike Type (ATM/OTM/ITM)</label>
+    <label class="checkbox-row"><input type="checkbox" id="${prefix}_use_premium" onchange="updateStrikeVisibility('${prefix}')"> Closest Premium</label>
   </div>
   <div class="strike-mode-body" id="${prefix}_offset_body">
     <div class="field wide">
@@ -342,66 +445,58 @@ function strikeAndLotsFieldsHTML(prefix) {
       <select multiple id="${prefix}_offsets" size="6">${offsetOptions}</select>
     </div>
   </div>
-  <div class="strike-mode-body hidden" id="${prefix}_premium_range_body">
-    <div class="row">
-      <div class="range-group">
-        <strong style="font-size:12px;">Lower</strong>
-        <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_lower_min" value="30"></div>
-        <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_lower_max" value="30"></div>
-        <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_lower_step" value="5"></div>
-      </div>
-      <div class="range-group">
-        <strong style="font-size:12px;">Upper</strong>
-        <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_upper_min" value="55"></div>
-        <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_upper_max" value="55"></div>
-        <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_upper_step" value="5"></div>
-      </div>
-    </div>
-  </div>
-  <div class="strike-mode-body hidden" id="${prefix}_premium_closest_body">
+  <div class="strike-mode-body hidden" id="${prefix}_premium_body">
     <div class="range-group">
       <strong style="font-size:12px;">Premium</strong>
-      <div class="field"><label>Min</label><input type="number" id="${prefix}_premium_value_min" value="30"></div>
-      <div class="field"><label>Max</label><input type="number" id="${prefix}_premium_value_max" value="30"></div>
-      <div class="field"><label>Step</label><input type="number" id="${prefix}_premium_value_step" value="5"></div>
+      <div class="field"><label>From</label><input type="number" id="${prefix}_premium_min" value="30"></div>
+      <div class="field"><label>To</label><input type="number" id="${prefix}_premium_max" value="30"></div>
+      <div class="field"><label>Interval</label><input type="number" id="${prefix}_premium_step" value="5"></div>
     </div>
   </div>`;
 }
 
+function updateStrikeVisibility(prefix) {
+  const useOffset = document.getElementById(`${prefix}_use_offset`).checked;
+  const usePremium = document.getElementById(`${prefix}_use_premium`).checked;
+  document.getElementById(`${prefix}_offset_body`).classList.toggle("hidden", !useOffset);
+  document.getElementById(`${prefix}_premium_body`).classList.toggle("hidden", !usePremium);
+}
+
+// Lots + strike fields, shared between a per-leg card and the single shared panel.
+function strikeAndLotsFieldsHTML(prefix) {
+  return `
+  <div class="row">
+    <div class="range-group">
+      <strong style="font-size:12px;">Lots</strong>
+      <div class="field"><label>From</label><input type="number" id="${prefix}_lots_min" value="1"></div>
+      <div class="field"><label>To</label><input type="number" id="${prefix}_lots_max" value="1"></div>
+      <div class="field"><label>Interval</label><input type="number" id="${prefix}_lots_step" value="1"></div>
+    </div>
+  </div>
+  ${strikeFieldsHTML(prefix)}`;
+}
+
 function applyLegFields(prefix, legCfg) {
   setRangeField(`${prefix}_lots`, legCfg.lots);
-  document.getElementById(`${prefix}_strike_mode`).value = legCfg.strike_mode;
-  if (legCfg.strike_mode === "offset") {
-    const sel = document.getElementById(`${prefix}_offsets`);
-    for (const opt of sel.options) opt.selected = legCfg.offsets.includes(opt.value);
-  } else if (legCfg.strike_mode === "premium_range") {
-    setRangeField(`${prefix}_premium_lower`, legCfg.premium_lower);
-    setRangeField(`${prefix}_premium_upper`, legCfg.premium_upper);
-  } else if (legCfg.strike_mode === "premium_closest") {
-    setRangeField(`${prefix}_premium_value`, legCfg.premium_value);
-  }
-  updateStrikeModeVisibility(prefix);
+  document.getElementById(`${prefix}_use_offset`).checked = legCfg.strike.use_offset;
+  document.getElementById(`${prefix}_use_premium`).checked = legCfg.strike.use_closest_premium;
+  const sel = document.getElementById(`${prefix}_offsets`);
+  for (const opt of sel.options) opt.selected = legCfg.strike.offsets.includes(opt.value);
+  setRangeField(`${prefix}_premium`, legCfg.strike.premium_range);
+  updateStrikeVisibility(prefix);
 }
 
 function collectLegFields(prefix) {
-  const mode = document.getElementById(`${prefix}_strike_mode`).value;
-  const leg = {
+  const offsets = Array.from(document.getElementById(`${prefix}_offsets`).selectedOptions).map(o => o.value);
+  return {
     lots: rangeField(`${prefix}_lots`, {min:1,max:1,step:1}),
-    strike_mode: mode,
-    offsets: Array.from(document.getElementById(`${prefix}_offsets`).selectedOptions).map(o => o.value),
-    premium_lower: rangeField(`${prefix}_premium_lower`, {min:30,max:30,step:5}),
-    premium_upper: rangeField(`${prefix}_premium_upper`, {min:55,max:55,step:5}),
-    premium_value: rangeField(`${prefix}_premium_value`, {min:30,max:30,step:5}),
+    strike: {
+      use_offset: document.getElementById(`${prefix}_use_offset`).checked,
+      offsets: offsets.length ? offsets : ["ATM"],
+      use_closest_premium: document.getElementById(`${prefix}_use_premium`).checked,
+      premium_range: rangeField(`${prefix}_premium`, {min:30,max:30,step:5}),
+    },
   };
-  if (leg.strike_mode === "offset" && leg.offsets.length === 0) leg.offsets = ["ATM"];
-  return leg;
-}
-
-function updateStrikeModeVisibility(prefix) {
-  const mode = document.getElementById(`${prefix}_strike_mode`).value;
-  document.getElementById(`${prefix}_offset_body`).classList.toggle("hidden", mode !== "offset");
-  document.getElementById(`${prefix}_premium_range_body`).classList.toggle("hidden", mode !== "premium_range");
-  document.getElementById(`${prefix}_premium_closest_body`).classList.toggle("hidden", mode !== "premium_closest");
 }
 
 function buildSharedLegPanel() {
@@ -491,15 +586,29 @@ function collectConfig() {
       start: document.getElementById("entry_start").value,
       end: document.getElementById("entry_end").value,
       interval_minutes: parseInt(document.getElementById("entry_interval").value || "15"),
+      fixed: document.getElementById("entry_fixed").checked,
     },
     exit_time: {
       start: document.getElementById("exit_start").value,
       end: document.getElementById("exit_end").value,
       interval_minutes: parseInt(document.getElementById("exit_interval").value || "5"),
+      fixed: document.getElementById("exit_fixed").checked,
     },
     linked_ce_pe: linked,
     shared_leg: sharedLeg,
     legs: legs.length ? legs : [sharedLeg, {...sharedLeg, option_type: "PE"}],
+    leg_risk: {
+      target_enabled: document.getElementById("legrisk_target_enabled").checked,
+      target_pct: rangeField("legrisk_target", {min:20,max:20,step:10}),
+      stoploss_enabled: document.getElementById("legrisk_stoploss_enabled").checked,
+      stoploss_pct: rangeField("legrisk_stoploss", {min:20,max:20,step:10}),
+      trail_points_enabled: document.getElementById("legrisk_trail_points_enabled").checked,
+      trail_points_x: rangeField("legrisk_trail_points_x", {min:10,max:10,step:5}),
+      trail_points_y: rangeField("legrisk_trail_points_y", {min:5,max:5,step:5}),
+      trail_percentage_enabled: document.getElementById("legrisk_trail_percentage_enabled").checked,
+      trail_percentage_x: rangeField("legrisk_trail_percentage_x", {min:1,max:1,step:0.5}),
+      trail_percentage_y: rangeField("legrisk_trail_percentage_y", {min:0.5,max:0.5,step:0.5}),
+    },
     stoploss_enabled: document.getElementById("stoploss_enabled").checked,
     stoploss_pct: rangeField("stoploss", {min:20,max:50,step:10}),
     target_enabled: document.getElementById("target_enabled").checked,
@@ -508,6 +617,8 @@ function collectConfig() {
     trail_sl_include_none: document.getElementById("trail_sl_include_none").checked,
     trail_sl_x: rangeField("trail_x", {min:20,max:20,step:5}),
     trail_sl_y: rangeField("trail_y", {min:10,max:10,step:5}),
+    trail_sl_step: rangeField("trail_step", {min:10,max:10,step:5}),
+    trail_sl_trail_by: rangeField("trail_trail_by", {min:5,max:5,step:5}),
     exclude: document.getElementById("exclude").value.split("\n").map(s => s.trim()).filter(Boolean),
     limit: document.getElementById("limit").value ? parseInt(document.getElementById("limit").value) : null,
     shuffle: document.getElementById("shuffle").checked,
@@ -525,9 +636,13 @@ function applyConfig(cfg) {
   document.getElementById("entry_start").value = cfg.entry_time.start;
   document.getElementById("entry_end").value = cfg.entry_time.end;
   document.getElementById("entry_interval").value = cfg.entry_time.interval_minutes;
+  document.getElementById("entry_fixed").checked = cfg.entry_time.fixed;
   document.getElementById("exit_start").value = cfg.exit_time.start;
   document.getElementById("exit_end").value = cfg.exit_time.end;
   document.getElementById("exit_interval").value = cfg.exit_time.interval_minutes;
+  document.getElementById("exit_fixed").checked = cfg.exit_time.fixed;
+  onFixedTimeToggle("entry");
+  onFixedTimeToggle("exit");
 
   buildSharedLegPanel();
   document.getElementById("shared_action").value = cfg.shared_leg.action;
@@ -540,6 +655,18 @@ function applyConfig(cfg) {
   document.getElementById("linked_ce_pe").checked = cfg.linked_ce_pe;
   onLinkedToggle();
 
+  const lr = cfg.leg_risk;
+  document.getElementById("legrisk_target_enabled").checked = lr.target_enabled;
+  setRangeField("legrisk_target", lr.target_pct);
+  document.getElementById("legrisk_stoploss_enabled").checked = lr.stoploss_enabled;
+  setRangeField("legrisk_stoploss", lr.stoploss_pct);
+  document.getElementById("legrisk_trail_points_enabled").checked = lr.trail_points_enabled;
+  setRangeField("legrisk_trail_points_x", lr.trail_points_x);
+  setRangeField("legrisk_trail_points_y", lr.trail_points_y);
+  document.getElementById("legrisk_trail_percentage_enabled").checked = lr.trail_percentage_enabled;
+  setRangeField("legrisk_trail_percentage_x", lr.trail_percentage_x);
+  setRangeField("legrisk_trail_percentage_y", lr.trail_percentage_y);
+
   document.getElementById("stoploss_enabled").checked = cfg.stoploss_enabled;
   setRangeField("stoploss", cfg.stoploss_pct);
   document.getElementById("target_enabled").checked = cfg.target_enabled;
@@ -548,6 +675,8 @@ function applyConfig(cfg) {
   document.getElementById("trail_sl_include_none").checked = cfg.trail_sl_include_none;
   setRangeField("trail_x", cfg.trail_sl_x);
   setRangeField("trail_y", cfg.trail_sl_y);
+  setRangeField("trail_step", cfg.trail_sl_step);
+  setRangeField("trail_trail_by", cfg.trail_sl_trail_by);
   document.getElementById("exclude").value = (cfg.exclude || []).join("\n");
   document.getElementById("limit").value = cfg.limit ?? "";
   document.getElementById("shuffle").checked = cfg.shuffle;

@@ -36,6 +36,7 @@ def apply_combination(page: Page, selectors: Selectors, combo: dict[str, Any]) -
         resolve(leg_locator, b.leg_option_type).select_option(label=_OPTION_TYPE_LABELS[leg["option_type"]])
         _apply_leg_strike(leg_locator, b, leg["strike"])
         resolve(leg_locator, b.leg_lots).first.fill(str(leg["lots"]))
+        _apply_leg_risk(leg_locator, b, combo.get("leg_risk"))
 
     _apply_stoploss(page, b, combo.get("stoploss_pct"))
     _apply_target(page, b, combo.get("target_pct"))
@@ -45,23 +46,42 @@ def apply_combination(page: Page, selectors: Selectors, combo: dict[str, Any]) -
 
 
 def _apply_leg_strike(leg_locator, b, strike: str | dict[str, Any]) -> None:
-    """strike is either a plain offset string ("ATM", "OTM3", ...) - the original,
-    always-supported mode - or a dict describing the newer premium-based modes
-    (discovered live while building the sweep-config web UI)."""
+    """strike is either a plain offset string ("ATM", "OTM3", ...) or
+    {"mode": "premium_closest", "value": ...} (discovered live while building the
+    sweep-config web UI)."""
     if isinstance(strike, str):
         resolve(leg_locator, b.leg_strike_selector).select_option(label=strike)
         return
 
     mode = strike["mode"]
-    if mode == "premium_range":
-        resolve(leg_locator, b.leg_strike_criteria).select_option(label="Premium Range")
-        resolve(leg_locator, b.leg_strike_premium_lower).fill(str(strike["lower"]))
-        resolve(leg_locator, b.leg_strike_premium_upper).fill(str(strike["upper"]))
-    elif mode == "premium_closest":
+    if mode == "premium_closest":
         resolve(leg_locator, b.leg_strike_criteria).select_option(label="Closest Premium")
         resolve(leg_locator, b.leg_strike_premium_value).fill(str(strike["value"]))
     else:
         raise ValueError(f"Unknown leg strike mode: {mode!r}")
+
+
+def _apply_leg_risk(leg_locator, b, leg_risk: dict[str, Any] | None) -> None:
+    """Per-leg Target Profit / Stop Loss / Trail SL - same config applied to every leg."""
+    if leg_risk is None:
+        return
+
+    if leg_risk.get("target_pct") is not None:
+        resolve(leg_locator, b.leg_target_toggle).click(force=True)
+        resolve(leg_locator, b.leg_target_type).first.select_option(label="Percent (%)")
+        resolve(leg_locator, b.leg_target_value).fill(str(leg_risk["target_pct"]))
+
+    if leg_risk.get("stoploss_pct") is not None:
+        resolve(leg_locator, b.leg_stoploss_toggle).click(force=True)
+        resolve(leg_locator, b.leg_stoploss_type).first.select_option(label="Percent (%)")
+        resolve(leg_locator, b.leg_stoploss_value).fill(str(leg_risk["stoploss_pct"]))
+
+    trail = leg_risk.get("trail")
+    if trail is not None:
+        resolve(leg_locator, b.leg_trail_toggle).click(force=True)
+        resolve(leg_locator, b.leg_trail_type).select_option(label=trail["type"])
+        resolve(leg_locator, b.leg_trail_x).fill(str(trail["x"]))
+        resolve(leg_locator, b.leg_trail_y).fill(str(trail["y"]))
 
 
 def _set_instrument(page: Page, b, instrument: str) -> None:
@@ -96,5 +116,10 @@ def _apply_trail_sl(page: Page, b, trail_sl) -> None:
     if trail_sl is None:
         return
     resolve(page, b.trail_sl_toggle).click(force=True)
+    # "Lock and Trail" is the only overall-trailing mode exposing all 4 of these
+    # fields together (confirmed live) - "Lock" alone only has x/y.
+    resolve(page, b.trail_sl_mode).select_option(label="Lock and Trail")
     resolve(page, b.trail_sl_x).fill(str(trail_sl["x"]))
     resolve(page, b.trail_sl_y).fill(str(trail_sl["y"]))
+    resolve(page, b.trail_sl_step).fill(str(trail_sl["step"]))
+    resolve(page, b.trail_sl_trail_by).fill(str(trail_sl["trail_by"]))
