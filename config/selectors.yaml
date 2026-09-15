@@ -14,18 +14,34 @@
 # [id="OverallStop Loss_overall-stoploss_input1"].
 
 login:
-  # NEEDS-CHECK: you log in with a PHONE NUMBER, not email, and you were already logged
-  # in when this file was generated, so the actual login form was never inspected live.
-  # Log out once and run tools/record.py (or open /login manually) to pick these up, or
-  # just tell Claude when you're logged out and it can inspect it directly.
-  email_input:             # actually your phone-number input
-  password_input:
-  submit_button:
+  # Confirmed live (2026-08-23): logging out redirects to the marketing homepage
+  # (algotest.in/?redirect_to=...), not a login form - navigate to login_url directly
+  # instead. The form itself uses a phone number (not email) + password; field names
+  # confirmed via the real DOM.
+  login_url: "https://algotest.in/login"
+  email_input: "input[name=\"phone\"]"    # actually your phone-number input
+  password_input: "input[name=\"password\"]"
+  submit_button: "button[type=\"submit\"]:has-text(\"Login\")"
   logged_in_marker: "text=Credits Available"   # confirmed: only rendered once logged in (there's no actual <header> tag on this page, despite the earlier note - fixed after a live smoke-test caught it)
+
+  # --- account menu / logout (added for the "logout & re-login for a longer
+  # session" feature) ---
+  # Confirmed live: this div is the account-menu dropdown's trigger (avatar + Credits
+  # badge, top right) - clicking it reveals a menu whose last item is a plain
+  # "Logout" button. Neither has a data-test-id/id on AlgoTest's side, so these are
+  # verified-live Tailwind class / text selectors rather than semantic ones.
+  account_menu_trigger: "div.relative.flex.cursor-pointer.items-center.gap-2"
+  logout_button: "button:has-text(\"Logout\")"
 
 builder:
   url: "https://algotest.in/backtest"
   instrument_select: "#underlying-selector"   # click this, then click the option (e.g. role=option \"BANKNIFTY\") in the popup listbox that opens
+  # Confirmed live: the Index dropdown only lists options belonging to whichever
+  # top-level tab is currently active - NIFTY/SENSEX live under "Weekly & Monthly
+  # Expiries" (the default tab on a fresh page load), BANKNIFTY/MIDCPNIFTY/FINNIFTY/
+  # BANKEX live under "Monthly Only Expiry" instead. {label} is one of these two
+  # tab names - see _INSTRUMENT_TABS in src/form.py for the instrument->tab mapping.
+  instrument_tab: "button:has-text(\"{label}\")"
   start_date_input: "#strategy-date-input div:has(> label:text-is(\"Start Date\")) input[type=\"date\"]"
   end_date_input: "#strategy-date-input div:has(> label:text-is(\"End Date\")) input[type=\"date\"]"
 
@@ -71,6 +87,71 @@ builder:
   leg_trail_x: "[id^=\"TrailSL_\"][id$=\"_input1\"]"
   leg_trail_y: "[id^=\"TrailSL_\"][id$=\"_input2\"]"
 
+  # --- per-leg "Simple Momentum" entry criteria ---
+  # Confirmed live: same random-per-leg-suffix container pattern as TargetProfit/
+  # StopLoss/TrailSL above (e.g. "simple_momentum_jkdxyq71"), so scope by prefix. The
+  # type select has 8 options (Points/Percent/Underlying x Up/Down) - we only use the
+  # two "Percent (%) ↑"/"Percent (%) ↓" labels for now (Playwright matches by visible
+  # label text, same as leg_target_type/leg_stoploss_type below).
+  leg_momentum_toggle: "[data-test-id^=\"toggle-handle_simple_momentum_\"]"
+  leg_momentum_type: "[id^=\"simple_momentum_\"] select"
+  leg_momentum_value: "[id^=\"simple_momentum_\"][id$=\"_input\"]"
+
+  # --- per-leg "Re-entry on SL" (distinct from the OVERALL Re-entry on SL further
+  # below) ---
+  # Confirmed live: the toggle button's own id is stable-prefix + stable-suffix (the
+  # random part is in the middle: "handle_rentry_{random}_Re-entry on SL"), unlike the
+  # other per-leg toggles above where the random part is the container's own id and
+  # the toggle just references it. The type select and the re-entry-count control (a
+  # headlessui combobox, not a native <select> - confirmed live) have no id of their
+  # own, so they're scoped via the toggle's id using a structural :has() (confirmed
+  # live this matches exactly 1 element, not the sibling "Re-entry on Tgt" section).
+  # Full type option list confirmed live: RE ASAP, RE ASAP ↩, RE MOMENTUM,
+  # RE MOMENTUM ↩, RE COST, RE COST ↩, Lazy Leg.
+  # Count options confirmed live: 1-6 (exact integer text in the opened listbox).
+  leg_reentry_sl_toggle: "[id^=\"handle_rentry_\"][id$=\"_Re-entry on SL\"]"
+  leg_reentry_sl_type: "div:has(> div > label > [id^=\"handle_rentry_\"][id$=\"_Re-entry on SL\"]) select"
+  leg_reentry_sl_count_trigger: "div:has(> div > label > [id^=\"handle_rentry_\"][id$=\"_Re-entry on SL\"]) div[aria-haspopup=\"listbox\"]"
+
+  # --- "Lazy Leg" (leg_reentry_sl_type = "Lazy Leg") ---
+  # Confirmed live: selecting "Lazy Leg" for a leg whose Re-entry on SL has no
+  # lazy leg attached yet auto-opens a "Create New Lazy Leg" popup - a full mini
+  # leg-builder in its own modal, pre-named "lazy1" (then "lazy2", ... - auto-
+  # incremented). Confirmed live the popup's own fields reuse the EXACT SAME id
+  # prefixes as a normal leg row (select_OptionType, select_ / select_StrikeType,
+  # StopLoss_, TrailSL_, simple_momentum_ etc.) - just scoped inside this modal
+  # instead of "#backtest-leg-{n}", so every leg_* selector above (leg_option_type,
+  # leg_strike_selector, leg_strike_criteria, leg_strike_premium_value,
+  # leg_stoploss_toggle/type/value, leg_trail_toggle/type/x/y,
+  # leg_momentum_toggle/type/value) is reused as-is, resolved against
+  # lazy_leg_modal instead of a leg_row locator - no separate copies needed.
+  #
+  # The modal has no role="dialog"/aria-modal (confirmed live - plain divs, no ARIA
+  # landmark), so it's scoped by its own heading text instead, matching this file's
+  # existing structural :has() convention.
+  #
+  # A leg reusing an ALREADY-CREATED lazy leg (2nd+ leg wanting the same one, or
+  # picking a distinct one via "+ Create New") does NOT reopen this popup - that
+  # picker (a small button showing the currently-selected lazy leg's name, with
+  # "+ Create New" / "Select from existing") is a separate, not-yet-automated
+  # mechanic - out of scope for now (single-lazy-leg-per-page only).
+  lazy_leg_modal: "div:has(> div > p:text-is(\"Create New Lazy Leg\"))"
+  lazy_leg_name_input: "input[placeholder=\"Leg Identifier\"]"   # scope inside lazy_leg_modal - prefilled "lazy1", "lazy2", ...
+  lazy_leg_create_and_select_button: "button:text-is(\"Create and Select\")"   # scope inside lazy_leg_modal
+
+  # A 2nd+ leg selecting "Lazy Leg" does NOT reopen the create popup - it silently
+  # defaults to reusing whatever lazy leg already exists (confirmed live). This
+  # picker (a headlessui Combobox button showing the currently-selected lazy leg's
+  # name, e.g. "lazy1") is how you ask for a genuinely NEW one instead - clicking it
+  # opens a small panel whose one real ARIA option (role="option", exact text
+  # "Create New" - confirmed live, unlike leg_reentry_sl_count_trigger's listbox
+  # above, this one's option DOES carry a proper role) reopens lazy_leg_modal.
+  # Resolved the same way as leg_reentry_sl_count_trigger (structural :has() off
+  # the toggle's own id) - only ever present when leg_reentry_sl_type is actually
+  # "Lazy Leg" (RE ASAP/RE COST's own count-trigger occupies this same spot
+  # otherwise, so there's no ambiguity at runtime).
+  lazy_leg_picker_trigger: "div:has(> div > label > [id^=\"handle_rentry_\"][id$=\"_Re-entry on SL\"]) button[aria-haspopup=\"listbox\"]"
+
   # --- entry / exit ---
   entry_time_input: "div:has(> label:text-is(\"Entry Time\")) input[type=\"time\"]"
   exit_time_input: "div:has(> label:text-is(\"Exit Time\")) input[type=\"time\"]"
@@ -106,6 +187,14 @@ builder:
 
   run_backtest_button: "button:has-text(\"Start Backtest\")"
 
+  # "Save Strategy" - confirmed live: sits next to Start Backtest on the results
+  # toolbar (only appears once a backtest has been run), opens a "Save New Strategy"
+  # dialog with a name input and a Done button. A folder can optionally be picked
+  # in that dialog too - not automated, saves to the default/no folder.
+  save_strategy_button: "button:has-text(\"Save Strategy\")"
+  save_strategy_name_input: "input[placeholder=\"Enter Strategy Name\"]"
+  save_strategy_confirm_button: "button:text-is(\"Done\")"
+
 results:
   ready_marker: "h5:text-is(\"BACKTEST RESULT\")"          # confirmed: appears once results render
   running_marker: "button:has-text(\"Running Backtest\")"  # confirmed: the run button's own label while in progress
@@ -120,6 +209,15 @@ results:
   # before reading metrics, never after. ---
   include_brokerage_toggle: "[data-test-id=\"toggle-toggle--result-brokerage_include_backtest\"]"
   include_taxes_toggle: "[data-test-id=\"toggle-toggle--result_include_backtest\"]"
+  # Brokerage rate (₹ per order/per lot) is a *separate* setting from the toggle above
+  # - the toggle only includes whatever rate is currently configured, which defaults to
+  # 0 until set here. Confirmed live: this rate persists across page.goto() within the
+  # same browser session, so the runner only opens/sets this once per sweep run, not
+  # per combo (see ensure_brokerage_rate in src/results.py).
+  brokerage_rate_edit_button: "div.flex.gap-2.flex-col:has([data-test-id=\"toggle-toggle--result-brokerage_include_backtest\"]) button[id^=\"headlessui-popover-button-\"]"
+  brokerage_rate_input: "div:has(> p:text-is(\"Brokerage rate\")) [data-testid=\"brokerage-number-input\"]"
+  brokerage_rate_type_select: "div:has(> p:text-is(\"Brokerage rate\")) select"
+  brokerage_rate_done_button: "div:has(> p:text-is(\"Brokerage rate\")) button:text-is(\"Done\")"  # use .last - the first "Done" match doesn't submit
   slippage_input: "div:has(> p:has-text(\"Slippage\")) input[type=\"number\"]"
   # NEEDS-CHECK: there are 3 "Re-calculate" buttons on the results page (this one,
   # Select VIX Range, and In/Out Sample Split Date) - this is confirmed to be the
@@ -133,6 +231,19 @@ results:
   # (checkbox list with "Select All"), confirmed live. Click to open, then find
   # role=option elements with exact "0".."6" text inside the opened [role="listbox"].
   dte_filter_value_trigger: "p:text-is(\"Filter by\") + div > div"
+
+  # --- per-combo trade report download (Correlate top N feature). Confirmed live via
+  # a real launch-and-download: scrolling to the bottom of the results page reveals a
+  # "Full Report" section with a paginated trades table, then this button. Clicking it
+  # opens a small popup with a filename text input and a confirm control - that confirm
+  # control is an <a download="..."> blob link, NOT a <button> (its download="..."
+  # attribute updates live to match whatever's currently typed into the filename
+  # input), so Playwright's expect_download() should wrap the click on
+  # download_confirm_link, not a button click. ---
+  full_report_heading: "h4:text-is(\"Full Report\")"          # scroll anchor only, not clicked
+  download_report_button: "button:text-is(\"Download Report\")"
+  download_filename_input: "input[name=\"fileName\"]"
+  download_confirm_link: "a:text-is(\"Download\")"
 
   metrics:                    # confirmed: label -> value pairs in a 3-column results table
     total_pnl: "tr:has-text(\"Overall Profit\") td:nth-child(2)"
@@ -148,3 +259,14 @@ results:
     avg_profit_winning_trades: "tr:has-text(\"Average Profit on Winning Trades\") td:nth-child(2)"
     return_max_dd: "tr:has-text(\"Return/MaxDD\") td:nth-child(2)"
     reward_risk_ratio: "tr:has-text(\"Reward to Risk Ratio\") td:nth-child(2)"
+    # Confirmed live: these two sit next to the "Include Brokerage"/"Taxes & charges"
+    # toggles in the results settings panel (not the metrics table above), and are
+    # what total_pnl already has deducted - a downloaded trade report's raw per-trade
+    # P&L does NOT reflect either, which is why summing one doesn't match total_pnl.
+    # Brokerage is a flat per-order fee (doesn't scale with lot size); taxes & charges
+    # scale with traded value (lot size) - see src/web/portfolio.py's lot-scaled
+    # combined-portfolio math, which needs this split to adjust each correctly instead
+    # of scaling both the same way. AlgoTest's own testid for the second one is the
+    # generic "cost-total", not "cost-taxes" - confirmed via its displayed value.
+    brokerage_amount: '[data-testid="cost-brokerage"]'
+    taxes_charges_amount: '[data-testid="cost-total"]'

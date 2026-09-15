@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
 from src.config import SweepConfig
+from src.lazy_leg import _ELIGIBLE_SL_PCT_MAX, _ELIGIBLE_SL_PCT_MIN, derive_lazy_leg
+from src.sweep import count_or_estimate
 from src.sweep import expand as expand_flat
-from src.web.models import LegRiskConfig, LegUIConfig, OverallRiskConfig, StrikeConfig, SweepUIConfig
+from src.sweep import iter_shuffled_combos
+from src.web.models import (
+    MAX_SANE_UNDERLYING_SL_PCT,
+    LegRiskConfig,
+    LegUIConfig,
+    OverallRiskConfig,
+    StrikeConfig,
+    SweepUIConfig,
+)
 
 UI_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "sweep_ui.yaml"
 
@@ -44,41 +54,120 @@ def _add_leg_vary(vary: dict[str, Any], prefix: str, leg: LegUIConfig) -> None:
 
 
 def _trail_choices(leg_risk: LegRiskConfig) -> list[dict[str, Any] | None]:
+    """X ("for every X point/percent move") must be >= Y ("trail SL by Y") - AlgoTest
+    itself warns "Having a TSL value where X < Y will lead to backtest and live
+    results not matching" for X < Y, so those pairs are dropped here rather than
+    generated and excluded later (also shrinks the combination count directly).
+    None (no trailing at all) is always unioned in alongside whatever's enabled, so a
+    sweep with Trail SL on still also tries every other dimension without it."""
     choices: list[dict[str, Any] | None] = []
     if leg_risk.trail_points_enabled:
         choices += [
             {"type": "Points", "x": x, "y": y}
             for x in leg_risk.trail_points_x.as_list()
             for y in leg_risk.trail_points_y.as_list()
+            if x >= y
         ]
     if leg_risk.trail_percentage_enabled:
         choices += [
             {"type": "Percentage", "x": x, "y": y}
             for x in leg_risk.trail_percentage_x.as_list()
             for y in leg_risk.trail_percentage_y.as_list()
+            if x >= y
         ]
     if not choices:
-        choices = [None]
-    return choices
+        return [None]
+    return [None] + choices
 
 
 def _overall_risk_choices(risk: OverallRiskConfig) -> list[dict[str, Any] | None]:
     """Union of percentage-basis ("Total Premium %") and amount-basis ("Max Loss" /
-    "Max Profit") choices - either or both, not crossed."""
+    "Max Profit") choices - either or both, not crossed. None (not set at all) is
+    always unioned in too, alongside whichever basis is enabled."""
     choices: list[dict[str, Any] | None] = []
     if risk.use_percentage:
         choices += [{"kind": "percentage", "value": v} for v in risk.percentage_range.as_list()]
     if risk.use_amount:
         choices += [{"kind": "amount", "value": v} for v in risk.amount_range.as_list()]
     if not choices:
-        choices = [None]
-    return choices
+        return [None]
+    return [None] + choices
+
+
+def _stoploss_choices(leg_risk: LegRiskConfig) -> list[dict[str, Any] | None]:
+    """Union of premium-basis ("Percent (%)") and underlying-basis ("Underlying %")
+    leg-level Stop Loss choices - either or both, not crossed. None (no leg-level
+    Stop Loss at all) is always unioned in too, same convention as
+    _overall_risk_choices above.
+
+    A value above MAX_SANE_UNDERLYING_SL_PCT on the underlying basis is silently
+    dropped here (not raised as an error) - a % move that large in the underlying
+    practically never happens intraday, so it's not a real stop loss, same as
+    has_hard_stop_loss in src/web/portfolio.py treats it. Filtered at generation
+    time rather than validated on the config model itself, since the model is
+    reconstructed from PAST data all over this app (saved executions, the
+    persisted sweep_ui.yaml, "save combo to AlgoTest") - rejecting construction
+    there would break loading anything saved before this cutoff existed, not just
+    block a NEW bad entry. Confirmed live: exactly that broke "Save basket in
+    AlgoTest" for a sweep run off a stale on-disk config still carrying 15-20%."""
+    choices: list[dict[str, Any] | None] = []
+    if leg_risk.stoploss_enabled:
+        choices += [{"kind": "percentage", "value": v} for v in leg_risk.stoploss_pct.as_list()]
+    if leg_risk.stoploss_underlying_enabled:
+        choices += [
+            {"kind": "underlying_percentage", "value": v}
+            for v in leg_risk.stoploss_underlying_pct.as_list()
+            if v <= MAX_SANE_UNDERLYING_SL_PCT
+        ]
+    if not choices:
+        return [None]
+    return [None] + choices
+
+
+def _momentum_choices(leg_risk: LegRiskConfig) -> list[dict[str, Any] | None]:
+    """Union (not cross product) of every Simple Momentum choice implied by the
+    Up/Down checkboxes - same convention as _trail_choices above, None always included."""
+    choices: list[dict[str, Any] | None] = []
+    if leg_risk.momentum_up_enabled:
+        choices += [{"direction": "UP", "value": v} for v in leg_risk.momentum_up_pct.as_list()]
+    if leg_risk.momentum_down_enabled:
+        choices += [{"direction": "DOWN", "value": v} for v in leg_risk.momentum_down_pct.as_list()]
+    if not choices:
+        return [None]
+    return [None] + choices
+
+
+def _reentry_sl_choices(leg_risk: LegRiskConfig) -> list[dict[str, Any] | None]:
+    """One choice per checked re-entry type (count is a single fixed value for phase 1,
+    not swept, and only meaningful for RE_ASAP/RE_COST - LAZY_LEG has no count) -
+    each checked type is tried as a separate alternative, plus None (no re-entry
+    at all) always unioned in. A combo always lands on exactly ONE of these,
+    same as AlgoTest's own Re-entry on SL dropdown only ever holding one type per
+    leg - so RE_ASAP/RE_COST/LAZY_LEG are automatically mutually exclusive PER
+    COMBO without any special-casing here, the same way RE_ASAP and RE_COST
+    already were before LAZY_LEG existed."""
+    if not leg_risk.reentry_sl_enabled or not leg_risk.reentry_sl_types:
+        return [None]
+    choices: list[dict[str, Any]] = []
+    for t in leg_risk.reentry_sl_types:
+        if t == "LAZY_LEG":
+            choices.append({"type": "LAZY_LEG"})
+        else:
+            choices.append({"type": t, "count": leg_risk.reentry_sl_count})
+    return [None] + choices
 
 
 def _add_leg_risk_vary(vary: dict[str, Any], leg_risk: LegRiskConfig) -> None:
-    vary[f"{_LEGRISK_PREFIX}target_pct"] = leg_risk.target_pct.as_list() if leg_risk.target_enabled else [None]
-    vary[f"{_LEGRISK_PREFIX}stoploss_pct"] = leg_risk.stoploss_pct.as_list() if leg_risk.stoploss_enabled else [None]
+    # None (not set) is always unioned in alongside the enabled range, so a sweep with
+    # e.g. leg-level Stop Loss on still also tries every other dimension without it -
+    # same convention as _trail_choices/_momentum_choices/_reentry_sl_choices below.
+    vary[f"{_LEGRISK_PREFIX}target_pct"] = (
+        [None] + leg_risk.target_pct.as_list() if leg_risk.target_enabled else [None]
+    )
+    vary[f"{_LEGRISK_PREFIX}stoploss_pct"] = _stoploss_choices(leg_risk)
     vary[f"{_LEGRISK_PREFIX}trail"] = _trail_choices(leg_risk)
+    vary[f"{_LEGRISK_PREFIX}momentum"] = _momentum_choices(leg_risk)
+    vary[f"{_LEGRISK_PREFIX}reentry_sl"] = _reentry_sl_choices(leg_risk)
 
 
 def to_sweep_config(cfg: SweepUIConfig) -> SweepConfig:
@@ -107,9 +196,38 @@ def to_sweep_config(cfg: SweepUIConfig) -> SweepConfig:
 
     _add_leg_risk_vary(vary, cfg.leg_risk)
     if cfg.leg_risk.target_enabled and cfg.leg_risk.stoploss_enabled:
+        # Only meaningful to compare when Stop Loss landed on the same (premium %)
+        # basis as Target - an underlying-% Stop Loss isn't comparable to a
+        # premium-% Target, so leave that combination in (same convention as the
+        # overall-target-vs-overall-stoploss exclude below).
         exclude.append(
             f"{_LEGRISK_PREFIX}target_pct is not None and {_LEGRISK_PREFIX}stoploss_pct is not None "
-            f"and {_LEGRISK_PREFIX}target_pct <= {_LEGRISK_PREFIX}stoploss_pct"
+            f"and {_LEGRISK_PREFIX}stoploss_pct['kind'] == 'percentage' "
+            f"and {_LEGRISK_PREFIX}target_pct <= {_LEGRISK_PREFIX}stoploss_pct['value']"
+        )
+    if cfg.leg_risk.trail_points_enabled or cfg.leg_risk.trail_percentage_enabled:
+        # stoploss_pct now also unions in a None baseline (see _add_leg_risk_vary) -
+        # AlgoTest trails the leg's own Stop Loss, so a combo with trailing set but no
+        # concrete stoploss_pct value would be invalid (same constraint the
+        # LegRiskConfig validator already enforces at the config level).
+        exclude.append(f"{_LEGRISK_PREFIX}trail is not None and {_LEGRISK_PREFIX}stoploss_pct is None")
+    if "LAZY_LEG" in cfg.leg_risk.reentry_sl_types:
+        # A combo that lands on reentry_sl=LAZY_LEG is only ever ACTUALLY
+        # different from reentry_sl=None (already generated as its own
+        # separate combo above) when the leg's own Stop Loss is
+        # percentage-based and within src/lazy_leg.py's own eligible range -
+        # see derive_lazy_leg. Outside that range, "Re-entry on SL" never even
+        # gets toggled on for that leg (see src/form.py's _apply_leg_risk),
+        # so the resulting backtest is byte-identical to the None sibling
+        # combo that already exists for the same other parameters - just
+        # under a separate combo_id that falsely claims Lazy Leg was used.
+        # Confirmed live: this produced thousands of wasted, mislabeled
+        # duplicate rows in one real sweep before this exclude existed.
+        exclude.append(
+            f"{_LEGRISK_PREFIX}reentry_sl is not None and {_LEGRISK_PREFIX}reentry_sl['type'] == 'LAZY_LEG' "
+            f"and ({_LEGRISK_PREFIX}stoploss_pct is None "
+            f"or {_LEGRISK_PREFIX}stoploss_pct['kind'] != 'percentage' "
+            f"or not ({_ELIGIBLE_SL_PCT_MIN} <= {_LEGRISK_PREFIX}stoploss_pct['value'] <= {_ELIGIBLE_SL_PCT_MAX}))"
         )
 
     vary["overall_stoploss"] = _overall_risk_choices(cfg.overall_stoploss)
@@ -121,14 +239,34 @@ def to_sweep_config(cfg: SweepUIConfig) -> SweepConfig:
         "and overall_target['kind'] == overall_stoploss['kind'] "
         "and overall_target['value'] <= overall_stoploss['value']"
     )
+    # A combo with neither a leg-level nor an overall Stop Loss has nothing capping
+    # its loss before Trail SL (if even that's on) has locked any profit in - on a
+    # bad enough day that's unlimited downside, not a strategy worth backtesting at
+    # all, let alone recommending. Only enforced when the config actually offers a
+    # Stop Loss to choose (leg-level or overall, any basis) - if neither is enabled
+    # at all, there's no SL dimension being swept in the first place, and excluding
+    # "neither is set" would just wipe out every combo in an unrelated sweep (e.g.
+    # one only exploring momentum or re-entry) rather than enforcing anything
+    # meaningful. Mirrors has_hard_stop_loss in src/web/portfolio.py, which applies
+    # the same rule to combos already sitting in a results CSV.
+    if (
+        cfg.leg_risk.stoploss_enabled
+        or cfg.leg_risk.stoploss_underlying_enabled
+        or cfg.overall_stoploss.use_percentage
+        or cfg.overall_stoploss.use_amount
+    ):
+        exclude.append(f"{_LEGRISK_PREFIX}stoploss_pct is None and overall_stoploss is None")
 
     if cfg.trail_sl_enabled:
+        # step ("for every increase in profit by") must be >= trail_by ("trail profit
+        # by") - the same X >= Y trailing constraint as the leg-level Trail SL above.
         pairs: list[Any] = [
             {"x": x, "y": y, "step": s, "trail_by": t}
             for x in cfg.trail_sl_x.as_list()
             for y in cfg.trail_sl_y.as_list()
             for s in cfg.trail_sl_step.as_list()
             for t in cfg.trail_sl_trail_by.as_list()
+            if s >= t
         ]
         if cfg.trail_sl_include_none:
             pairs = [None] + pairs
@@ -166,7 +304,24 @@ def nest_combo(flat_combo: dict[str, Any], cfg: SweepUIConfig) -> dict[str, Any]
         "target_pct": combo.pop(f"{_LEGRISK_PREFIX}target_pct"),
         "stoploss_pct": combo.pop(f"{_LEGRISK_PREFIX}stoploss_pct"),
         "trail": combo.pop(f"{_LEGRISK_PREFIX}trail"),
+        "momentum": combo.pop(f"{_LEGRISK_PREFIX}momentum"),
+        "reentry_sl": combo.pop(f"{_LEGRISK_PREFIX}reentry_sl"),
     }
+
+    # Triggered by THIS combo's own reentry_sl choice landing on "LAZY_LEG" (see
+    # _reentry_sl_choices) - a genuine per-combo alternative alongside RE_ASAP/
+    # RE_COST/None, not a separate sweep-wide toggle. The actual per-leg values
+    # (strike/SL%/trail/momentum) are still derived here rather than swept -
+    # see src/lazy_leg.py's derive_lazy_leg. A leg that isn't eligible (SL%
+    # outside 25-60, underlying-based SL, no SL at all, or an instrument with no
+    # confirmed momentum threshold) simply gets no "lazy_leg" key, same as any
+    # other not-applicable optional field.
+    reentry_sl = combo["leg_risk"]["reentry_sl"]
+    if reentry_sl is not None and reentry_sl["type"] == "LAZY_LEG":
+        for leg in legs:
+            lazy_leg = derive_lazy_leg(leg, combo["leg_risk"], cfg.instrument)
+            if lazy_leg is not None:
+                leg["lazy_leg"] = lazy_leg
 
     combo["stoploss"] = combo.pop("overall_stoploss")
     combo["target"] = combo.pop("overall_target")
@@ -178,6 +333,82 @@ def nest_combo(flat_combo: dict[str, Any], cfg: SweepUIConfig) -> dict[str, Any]
 def expand_ui_config(cfg: SweepUIConfig) -> list[dict[str, Any]]:
     flat_combos = expand_flat(to_sweep_config(cfg))
     return [nest_combo(c, cfg) for c in flat_combos]
+
+
+def estimate_ui_config(cfg: SweepUIConfig, sample_size: int = 5_000, seed: int | None = None) -> dict[str, Any]:
+    """Preview's answer to "how many combinations, and what do a few look like" -
+    exact for a config small enough that expand_ui_config is already fast, a fast
+    sampled estimate otherwise (see src.sweep.count_or_estimate/EXACT_COUNT_THRESHOLD).
+    Nests the sample the same way expand_ui_config's full result would be nested."""
+    result = count_or_estimate(to_sweep_config(cfg), sample_size=sample_size, seed=seed)
+    result["sample"] = [nest_combo(c, cfg) for c in result["sample"]]
+    return result
+
+
+def iter_shuffled_ui_combos(cfg: SweepUIConfig, seed: int | None = None) -> Iterator[dict[str, Any]]:
+    """The large-sweep alternative to expand_ui_config - see
+    src.sweep.iter_shuffled_combos for why this exists and what "shuffled" buys a
+    caller that consumes it incrementally (e.g. run_sweep_multiprocess)."""
+    sweep = to_sweep_config(cfg)
+    for flat_combo in iter_shuffled_combos(sweep, seed=seed):
+        yield nest_combo(flat_combo, cfg)
+
+
+def probe_combos(cfg: SweepUIConfig) -> list[dict[str, Any]]:
+    """Every distinct nested "shape" nest_combo can produce for this config (e.g.
+    trail_sl being None vs {"x": .., "y": ..}), without materializing the full
+    Cartesian product - one probe combo per (key, value) pair in the flat vary dict,
+    with every OTHER key held at its own first value. nest_combo pops each prefix from
+    a single fixed flat key, never conditionally on another key's value, so each key's
+    contribution to a combo's shape is independent of every other key's - varying one
+    key at a time this way still touches every shape the full expansion could produce,
+    at O(values) cost instead of O(raw product). Used to build CSV fieldnames for a
+    sweep too large to fully expand - see RunState.start.
+
+    ONE exception to "independent of every other key's": a leg's "lazy_leg"
+    shape (see src/lazy_leg.py's derive_lazy_leg) depends on TWO keys at
+    once - legrisk_reentry_sl landing on LAZY_LEG *and* legrisk_stoploss_pct
+    landing on an eligible value, simultaneously - never just one. No
+    single-key-varied-at-a-time probe above can ever produce that
+    combination (whichever of the two you vary, the OTHER stays at its own
+    baseline - always None for both, per _reentry_sl_choices/_stoploss_
+    choices), so build_fieldnames() fed only from these probes would never
+    discover the "legs.N.lazy_leg.*" columns for a sweep large enough to use
+    this path - confirmed live: a real sweep's own CSV silently dropped every
+    such column on every resume, for every row, because of exactly this. One
+    extra, deliberately combined probe (added only when the config can
+    actually produce this shape) closes the gap."""
+    sweep = to_sweep_config(cfg)
+    keys = list(sweep.vary.keys())
+    value_lists = [sweep.vary[k] for k in keys]
+    baseline = {k: values[0] for k, values in zip(keys, value_lists)}
+    probes = []
+    for k, values in zip(keys, value_lists):
+        for v in values:
+            flat = dict(sweep.fixed)
+            flat.update(baseline)
+            flat[k] = v
+            probes.append(nest_combo(flat, cfg))
+
+    if "LAZY_LEG" in cfg.leg_risk.reentry_sl_types:
+        stoploss_key = f"{_LEGRISK_PREFIX}stoploss_pct"
+        eligible_sl = next(
+            (
+                v for v in sweep.vary.get(stoploss_key, [])
+                if v is not None
+                and v.get("kind") == "percentage"
+                and _ELIGIBLE_SL_PCT_MIN <= v["value"] <= _ELIGIBLE_SL_PCT_MAX
+            ),
+            None,
+        )
+        if eligible_sl is not None:
+            flat = dict(sweep.fixed)
+            flat.update(baseline)
+            flat[f"{_LEGRISK_PREFIX}reentry_sl"] = {"type": "LAZY_LEG"}
+            flat[stoploss_key] = eligible_sl
+            probes.append(nest_combo(flat, cfg))
+
+    return probes
 
 
 def load_ui_config() -> SweepUIConfig:

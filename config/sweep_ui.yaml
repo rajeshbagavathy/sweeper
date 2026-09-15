@@ -1,0 +1,171 @@
+instrument: SENSEX
+start_date: '2025-01-01'
+end_date: '2026-09-09'
+entry_time:
+  start: 09:17
+  end: '10:00'
+  interval_minutes: 5
+  fixed: false
+exit_time:
+  start: '13:15'
+  end: '15:00'
+  interval_minutes: 30
+  fixed: false
+linked_ce_pe: true
+shared_leg:
+  action: SELL
+  option_type: CE
+  lots:
+    min: 10.0
+    max: 10.0
+    step: 0.0
+  strike:
+    use_offset: true
+    offsets:
+    - ATM
+    - OTM1
+    use_closest_premium: true
+    premium_range:
+      min: 50.0
+      max: 120.0
+      step: 20.0
+legs:
+- action: SELL
+  option_type: CE
+  lots:
+    min: 1.0
+    max: 1.0
+    step: 1.0
+  strike:
+    use_offset: false
+    offsets:
+    - ATM
+    use_closest_premium: true
+    premium_range:
+      min: 60.0
+      max: 130.0
+      step: 20.0
+- action: SELL
+  option_type: PE
+  lots:
+    min: 1.0
+    max: 1.0
+    step: 1.0
+  strike:
+    use_offset: true
+    offsets:
+    - ATM
+    use_closest_premium: false
+    premium_range:
+      min: 30.0
+      max: 30.0
+      step: 5.0
+leg_risk:
+  target_enabled: false
+  target_pct:
+    min: 20.0
+    max: 20.0
+    step: 10.0
+  stoploss_enabled: true
+  stoploss_pct:
+    min: 15.0
+    max: 30.0
+    step: 5.0
+  stoploss_underlying_enabled: true
+  stoploss_underlying_pct:
+    min: 0.2
+    max: 0.3
+    step: 0.05
+  trail_points_enabled: true
+  trail_points_x:
+    min: 1.0
+    max: 5.0
+    step: 2.0
+  trail_points_y:
+    min: 1.0
+    max: 5.0
+    step: 2.0
+  trail_percentage_enabled: false
+  trail_percentage_x:
+    min: 1.0
+    max: 1.0
+    step: 0.5
+  trail_percentage_y:
+    min: 0.5
+    max: 0.5
+    step: 0.5
+  momentum_up_enabled: false
+  momentum_up_pct:
+    min: 5.0
+    max: 10.0
+    step: 5.0
+  momentum_down_enabled: true
+  momentum_down_pct:
+    min: 5.0
+    max: 10.0
+    step: 5.0
+  reentry_sl_enabled: true
+  reentry_sl_types:
+  - RE_COST
+  - LAZY_LEG
+  reentry_sl_count: 1
+overall_stoploss:
+  use_percentage: false
+  percentage_range:
+    min: 20.0
+    max: 50.0
+    step: 10.0
+  use_amount: true
+  amount_range:
+    min: 6000.0
+    max: 8000.0
+    step: 1000.0
+overall_target:
+  use_percentage: false
+  percentage_range:
+    min: 30.0
+    max: 80.0
+    step: 25.0
+  use_amount: false
+  amount_range:
+    min: 5000.0
+    max: 5000.0
+    step: 1000.0
+trail_sl_enabled: true
+trail_sl_include_none: true
+trail_sl_x:
+  min: 5000.0
+  max: 5000.0
+  step: 0.0
+trail_sl_y:
+  min: 1000.0
+  max: 1000.0
+  step: 0.0
+trail_sl_step:
+  min: 4000.0
+  max: 4000.0
+  step: 1000.0
+trail_sl_trail_by:
+  min: 2000.0
+  max: 2000.0
+  step: 0.0
+exclude: []
+limit: null
+shuffle: true
+slippage_pct: 1.0
+dte_values:
+- 0
+- 1
+brokerage_rate: 20.0
+auto_download_enabled: true
+auto_download_min_return_max_dd: 1.5
+auto_download_min_trades: 0
+capture_dte_individually: true
+skip_known_duplicate_strategies: true
+parallelism: 4
+parallelism_account2: 4
+parallelism_account3: 0
+delay: 2.0
+headless: true
+result_timeout: 180
+max_retries: 2

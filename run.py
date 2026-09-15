@@ -7,6 +7,8 @@
     python run.py --resume output/results_20260822_1030.csv
     python run.py --only-failed <csv>        # retry just the error rows
     python run.py --slippage 1.5 --dte 0,1,2 # results-panel settings applied before scraping
+    python run.py --brokerage-rate 20        # Rs per order, set once at sweep start (default: 20)
+    python run.py --parallelism 10 --headless # run 10 tabs concurrently (AlgoTest allows up to 15)
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from dotenv import load_dotenv
 from src import browser, store
 from src.auth import LoginNotConfigured, is_logged_in
 from src.config import load_selectors, load_sweep
-from src.runner import run_sweep
+from src.runner import run_sweep, run_sweep_multiprocess
 from src.sweep import TooManyCombinations, expand
 
 ROOT = Path(__file__).resolve().parent
@@ -44,6 +46,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-retries", type=int, default=2, help="retries per combo before giving up (default: 2)")
     parser.add_argument("--slippage", type=float, default=1.0, help="slippage %% applied on the results panel before scraping (default: 1)")
     parser.add_argument("--dte", default="0", help="comma-separated DTE filter values, e.g. '0,1,2' (default: 0)")
+    parser.add_argument(
+        "--brokerage-rate", type=float, default=20.0,
+        help="Rs per order brokerage rate, set once at the start of the sweep (default: 20)",
+    )
+    parser.add_argument(
+        "--parallelism", type=int, default=1,
+        help="run this many tabs concurrently in the same session (AlgoTest allows up to 15; default: 1, sequential)",
+    )
     return parser.parse_args()
 
 
@@ -77,9 +87,13 @@ def main() -> int:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_path = OUTPUT_DIR / f"results_{timestamp}.csv"
 
-    existing_statuses, existing_header = store.load_existing(csv_path)
     metric_names = list(selectors.results.metrics.keys())
-    fieldnames = existing_header or store.build_fieldnames(combos, metric_names)
+    # Rewrites an existing file in place (once) if it predates a column that's since
+    # become standard (e.g. "dte") - a no-op if the file doesn't exist yet or already
+    # has everything (see store.migrate_header_if_needed's docstring for why this
+    # matters more than just reusing the old header as-is).
+    fieldnames = store.migrate_header_if_needed(csv_path, store.build_fieldnames(combos, metric_names))
+    existing_statuses, _ = store.load_existing(csv_path)
 
     if args.only_failed:
         failed_ids = {cid for cid, status in existing_statuses.items() if status == "error"}
@@ -92,24 +106,16 @@ def main() -> int:
     password = os.environ.get("ALGOTEST_PASSWORD")
     dte_values = [int(v.strip()) for v in args.dte.split(",") if v.strip()]
 
-    with browser.persistent_context(headless=args.headless) as context:
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(selectors.builder.url)
-
-        try:
-            is_logged_in(page, selectors)
-        except LoginNotConfigured as exc:
-            print(f"Cannot proceed: {exc}", file=sys.stderr)
-            return 1
-
-        stats = run_sweep(
-            page,
+    if args.parallelism > 1:
+        stats = run_sweep_multiprocess(
             combos,
             selectors,
             csv_path,
             LOG_PATH,
             fieldnames,
             existing_statuses,
+            parallelism=args.parallelism,
+            headless=args.headless,
             delay_s=args.delay,
             result_timeout_s=args.result_timeout,
             max_retries=args.max_retries,
@@ -117,7 +123,36 @@ def main() -> int:
             password=password,
             slippage_pct=args.slippage,
             dte_values=dte_values,
+            brokerage_rate=args.brokerage_rate,
         )
+    else:
+        with browser.persistent_context(headless=args.headless) as context:
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(selectors.builder.url)
+
+            try:
+                is_logged_in(page, selectors)
+            except LoginNotConfigured as exc:
+                print(f"Cannot proceed: {exc}", file=sys.stderr)
+                return 1
+
+            stats = run_sweep(
+                page,
+                combos,
+                selectors,
+                csv_path,
+                LOG_PATH,
+                fieldnames,
+                existing_statuses,
+                delay_s=args.delay,
+                result_timeout_s=args.result_timeout,
+                max_retries=args.max_retries,
+                email=email,
+                password=password,
+                slippage_pct=args.slippage,
+                dte_values=dte_values,
+                brokerage_rate=args.brokerage_rate,
+            )
 
     print(f"\nDone. ok={stats['ok']} error={stats['error']} skipped={stats['skipped']}")
     print(f"Results: {csv_path}")

@@ -1,0 +1,228 @@
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e0e3e8;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --ok: #16a34a;
+    --error: #dc2626;
+    --skip: #9333ea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 1600px;
+    width: 95%;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  section.card h2 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  section.card h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field.wide { min-width: 220px; }
+  input[type=text], input[type=number], input[type=date], input[type=time], select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+    color: var(--text);
+  }
+  input:disabled, select:disabled { background: #f3f4f6; color: var(--muted); }
+  select[multiple] { min-height: 110px; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .range-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .range-group .field { min-width: 70px; }
+  .subsection {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .leg {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .leg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .leg-header strong { font-size: 13px; }
+  .strike-mode-body { margin-top: 10px; }
+  .hidden { display: none !important; }
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  button.primary { background: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.secondary { background: #eef1f5; color: var(--text); }
+  button.danger { background: #fee2e2; color: var(--error); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .status-bar {
+    display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.idle { background: #eef1f5; color: var(--muted); }
+  .badge.running { background: #dbeafe; color: var(--accent-dark); }
+  .badge.stopping { background: #fef3c7; color: #92400e; }
+  .badge.done { background: #dcfce7; color: var(--ok); }
+  .badge.stopped { background: #fef3c7; color: #92400e; }
+  .badge.error { background: #fee2e2; color: var(--error); }
+  .progress-bar-outer { width: 100%; height: 8px; background: #eef1f5; border-radius: 999px; overflow: hidden; }
+  .progress-bar-inner { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+  .counts span { margin-right: 14px; }
+  .counts .ok { color: var(--ok); font-weight: 600; }
+  .counts .error { color: var(--error); font-weight: 600; }
+  .counts .skipped { color: var(--skip); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; white-space: nowrap; }
+  th { background: #f9fafb; position: sticky; top: 0; }
+  th.priority-col, td.priority-col { background: #fffbeb; }
+  th.priority-col { color: #92400e; }
+  .table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  #previewOutput, #dryRunOutput { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  .exclude-box textarea { width: 100%; min-height: 50px; font-family: monospace; font-size: 12px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }
+  .login-banner {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #fee2e2; border: 1px solid #fca5a5; color: #7f1d1d;
+    padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+  }
+  .login-banner.waiting { background: #fef3c7; border-color: #fcd34d; color: #78350f; }
+  .login-banner.logged_in { background: #dcfce7; border-color: #86efac; color: #14532d; }
+  .login-banner .msg { flex: 1; min-width: 200px; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+    align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-box {
+    background: #fff; border-radius: 10px; max-width: 640px; width: 90%;
+    max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .modal-header h3 { margin: 0; font-size: 15px; }
+  .modal-body { padding: 10px 18px; overflow-y: auto; }
+  .detail-row { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+  .detail-key { flex: 0 0 45%; color: var(--muted); word-break: break-word; }
+  .detail-val { flex: 1; font-weight: 500; word-break: break-word; }
+  #resultsTable a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+
+  /* Strategy timing coverage: every distinct entry/exit-time bar lives in ONE
+     bounded, scrollable strip instead of one big bordered block per bar (which
+     used to make this section alone dominate the whole page once a sweep had
+     more than a couple dozen distinct timings). */
+  .timing-list {
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+  }
+  .timing-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .timing-row:hover { background: #f3f4f6; }
+  .timing-label {
+    flex: 0 0 150px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .timing-bar-track {
+    flex: 1;
+    height: 6px;
+    background: #eef1f5;
+    border-radius: 999px;
+    overflow: visible;
+  }
+  .timing-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+  /* The "hover to zoom in on that color" request - the bar itself grows plumper
+     and more saturated on hover, without disturbing the row's own layout (the
+     track it sits in doesn't resize, just the fill visually pops out of it). */
+  .timing-row:hover .timing-bar-fill {
+    transform: scaleY(2.2);
+    filter: brightness(1.15) saturate(1.3);
+  }
+  .timing-count {
+    flex: 0 0 42px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+  }
+  .timing-tooltip {
+    position: fixed;
+    z-index: 200;
+    background: #1b1f24;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.6;
+    padding: 8px 10px;
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    pointer-events: none;
+    max-width: 280px;
+    display: none;
+  }

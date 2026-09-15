@@ -18,11 +18,91 @@ from src.web.models import (
 )
 
 
-def rmdd_sort_key(row: dict) -> float:
-    try:
-        return float(row.get("return_max_dd", ""))
-    except (TypeError, ValueError):
-        return float("-inf")  # missing/error rows sink to the bottom, never crash the sort
+def numeric_sort_key(column: str):
+    """Returns a sort key function for any numeric metric column - missing/garbage
+    values sink to the bottom (never crash the sort) rather than being excluded."""
+
+    def key(row: dict) -> float:
+        try:
+            return float(row.get(column, ""))
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    return key
+
+
+rmdd_sort_key = numeric_sort_key("return_max_dd")
+
+
+def profitability_gated_key(base_key_fn):
+    """Wraps any row sort key so every profitable row (total_pnl > 0) ranks above
+    every non-profitable one, no matter how good the latter's ratio metrics look -
+    the original key only ever decides order *within* each of those two groups.
+
+    This exists because return_max_dd and reward_risk_ratio are both ratios that
+    can score deceptively well for a strategy that actually lost money overall: a
+    negative total_pnl divided by a negative max_drawdown yields a POSITIVE ratio,
+    so a money-losing strategy could otherwise float to the very top of "Return/
+    MaxDD" or "Best of Best" sorts. Profitability is treated as a hard prerequisite
+    for "best," not one more weighted ingredient - a weighted blend can't guarantee
+    a losing strategy never outranks a profitable one, only make it less likely."""
+
+    def key(row: dict) -> tuple[int, float]:
+        try:
+            profitable = float(row.get("total_pnl", "")) > 0
+        except (TypeError, ValueError):
+            profitable = False
+        return (1 if profitable else 0, base_key_fn(row))
+
+    return key
+
+
+def _normalized_values(rows: list[dict], column: str) -> dict[int, float]:
+    """Min-max normalize a numeric column to [0, 1] across `rows` (keyed by object
+    id, since CSV rows have no natural id and this is only ever consulted for the
+    exact same row objects within one sort call). Missing/garbage values get 0 (the
+    worst score) rather than crashing or silently excluding the row."""
+    parsed: list[tuple[int, float | None]] = []
+    for row in rows:
+        try:
+            parsed.append((id(row), float(row.get(column, ""))))
+        except (TypeError, ValueError):
+            parsed.append((id(row), None))
+
+    valid = [v for _, v in parsed if v is not None]
+    if not valid:
+        return {i: 0.0 for i, _ in parsed}
+    lo, hi = min(valid), max(valid)
+    span = hi - lo
+
+    def normalize(v: float | None) -> float:
+        if v is None:
+            return 0.0
+        return 0.5 if span == 0 else (v - lo) / span
+
+    return {i: normalize(v) for i, v in parsed}
+
+
+def combined_sort_key(rows: list[dict], rmdd_weight: float = 0.65):
+    """"Best of best" ranking: blends Return/MaxDD (overall equity-curve risk-adjusted
+    return - the Calmar-ratio-style measure of whether the strategy's drawdown is
+    survivable relative to its payoff) with Reward:Risk ratio (per-trade payoff shape -
+    a secondary sanity check that the return isn't just one lucky trade propping up an
+    otherwise fragile edge). Both normalized to [0, 1] within `rows` first, since the
+    two metrics aren't naturally on the same scale - a raw sum would let whichever one
+    happens to have the wider range dominate regardless of the requested weight.
+    rmdd_weight=0.65 is a suggested default (RMDD as the primary "would I survive
+    running this" signal, Reward:Risk as confirmation), not a rule - callers can pass
+    any 0-1 weight."""
+    rmdd_norm = _normalized_values(rows, "return_max_dd")
+    rr_norm = _normalized_values(rows, "reward_risk_ratio")
+    rr_weight = 1.0 - rmdd_weight
+
+    def key(row: dict) -> float:
+        i = id(row)
+        return rmdd_weight * rmdd_norm.get(i, 0.0) + rr_weight * rr_norm.get(i, 0.0)
+
+    return key
 
 
 def _numeric_values(rows: list[dict], column: str) -> list[float]:
@@ -104,15 +184,36 @@ def _narrow_leg(old: LegUIConfig, rows: list[dict], prefix: str) -> LegUIConfig:
 
 def _narrow_leg_risk(old: LegRiskConfig, rows: list[dict]) -> LegRiskConfig:
     target_values = _numeric_values(rows, "leg_risk.target_pct")
-    stoploss_values = _numeric_values(rows, "leg_risk.stoploss_pct")
+
+    # leg_risk.stoploss_pct is now a {"kind", "value"} dict-or-None (two mutually
+    # exclusive bases, see _stoploss_choices in expand.py) - split by kind, same
+    # convention as _narrow_overall_risk below, rather than reading it as one flat
+    # numeric column.
+    pct_rows = [r for r in rows if r.get("leg_risk.stoploss_pct.kind") == "percentage"]
+    underlying_rows = [r for r in rows if r.get("leg_risk.stoploss_pct.kind") == "underlying_percentage"]
+    pct_values = _numeric_values(pct_rows, "leg_risk.stoploss_pct.value")
+    underlying_values = _numeric_values(underlying_rows, "leg_risk.stoploss_pct.value")
+
     points_rows = [r for r in rows if r.get("leg_risk.trail.type") == "Points"]
     percentage_rows = [r for r in rows if r.get("leg_risk.trail.type") == "Percentage"]
+
+    # Trail SL requires Stop Loss to be enabled too (AlgoTest trails the Stop Loss -
+    # see LegRiskConfig's validator), so keep whichever basis the winning trail-active
+    # rows actually used turned on, rather than blindly forcing one - narrowing must
+    # never silently turn off the one thing Trail SL depends on.
+    trail_rows = points_rows + percentage_rows
+    trail_forces_pct = any(r.get("leg_risk.stoploss_pct.kind") == "percentage" for r in trail_rows)
+    trail_forces_underlying = any(r.get("leg_risk.stoploss_pct.kind") == "underlying_percentage" for r in trail_rows)
 
     return LegRiskConfig(
         target_enabled=bool(target_values),
         target_pct=_narrow_range(old.target_pct, target_values, floor=0) if target_values else old.target_pct,
-        stoploss_enabled=bool(stoploss_values),
-        stoploss_pct=_narrow_range(old.stoploss_pct, stoploss_values, floor=0) if stoploss_values else old.stoploss_pct,
+        stoploss_enabled=bool(pct_values) or trail_forces_pct,
+        stoploss_pct=_narrow_range(old.stoploss_pct, pct_values, floor=0) if pct_values else old.stoploss_pct,
+        stoploss_underlying_enabled=bool(underlying_values) or trail_forces_underlying,
+        stoploss_underlying_pct=_narrow_range(old.stoploss_underlying_pct, underlying_values, floor=0)
+        if underlying_values
+        else old.stoploss_underlying_pct,
         trail_points_enabled=bool(points_rows),
         trail_points_x=_narrow_range(old.trail_points_x, _numeric_values(points_rows, "leg_risk.trail.x"), floor=0)
         if points_rows
@@ -176,7 +277,10 @@ def narrow_config(cfg: SweepUIConfig, rows: list[dict], top_n: int = 10) -> Swee
     if not successful:
         raise ValueError("No successful ('ok') rows to narrow from yet - run the sweep first.")
 
-    successful.sort(key=rmdd_sort_key, reverse=True)
+    # Same profitability gate as the results table's sort - narrowing sweep ranges
+    # around a strategy with a deceptively good Return/MaxDD ratio but negative
+    # total_pnl would defeat the whole point of "center on whatever won."
+    successful.sort(key=profitability_gated_key(rmdd_sort_key), reverse=True)
     top_rows = successful[:top_n]
 
     new = cfg.model_copy(deep=True)

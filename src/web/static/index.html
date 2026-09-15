@@ -3,149 +3,48 @@
 <head>
 <meta charset="utf-8">
 <title>AlgoTest Sweeper</title>
-<style>
-  :root {
-    --bg: #f6f7f9;
-    --card: #ffffff;
-    --border: #e0e3e8;
-    --text: #1b1f24;
-    --muted: #6b7280;
-    --accent: #2563eb;
-    --accent-dark: #1d4ed8;
-    --ok: #16a34a;
-    --error: #dc2626;
-    --skip: #9333ea;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-  header {
-    padding: 20px 28px;
-    border-bottom: 1px solid var(--border);
-    background: var(--card);
-  }
-  header h1 { margin: 0; font-size: 20px; }
-  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-  main {
-    max-width: 1600px;
-    width: 95%;
-    margin: 0 auto;
-    padding: 24px 20px 80px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  section.card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 18px 20px;
-  }
-  section.card h2 {
-    margin: 0 0 14px;
-    font-size: 15px;
-    font-weight: 600;
-  }
-  section.card h3 {
-    margin: 0 0 10px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
-  }
-  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
-  .field { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
-  .field label { font-size: 12px; color: var(--muted); }
-  .field.wide { min-width: 220px; }
-  input[type=text], input[type=number], input[type=date], input[type=time], select {
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-    background: #fff;
-    color: var(--text);
-  }
-  input:disabled, select:disabled { background: #f3f4f6; color: var(--muted); }
-  select[multiple] { min-height: 110px; }
-  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-  .range-group {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    border: 1px dashed var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
-  }
-  .range-group .field { min-width: 70px; }
-  .subsection {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    margin-bottom: 12px;
-  }
-  .leg {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
-    position: relative;
-  }
-  .leg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .leg-header strong { font-size: 13px; }
-  .strike-mode-body { margin-top: 10px; }
-  .hidden { display: none !important; }
-  button {
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 13px;
-    cursor: pointer;
-    font-weight: 500;
-  }
-  button.primary { background: var(--accent); color: #fff; }
-  button.primary:hover { background: var(--accent-dark); }
-  button.secondary { background: #eef1f5; color: var(--text); }
-  button.danger { background: #fee2e2; color: var(--error); }
-  button.small { padding: 4px 10px; font-size: 12px; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .status-bar {
-    display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
-    font-size: 13px;
-  }
-  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-  .badge.idle { background: #eef1f5; color: var(--muted); }
-  .badge.running { background: #dbeafe; color: var(--accent-dark); }
-  .badge.done { background: #dcfce7; color: var(--ok); }
-  .badge.stopped { background: #fef3c7; color: #92400e; }
-  .badge.error { background: #fee2e2; color: var(--error); }
-  .progress-bar-outer { width: 100%; height: 8px; background: #eef1f5; border-radius: 999px; overflow: hidden; }
-  .progress-bar-inner { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
-  .counts span { margin-right: 14px; }
-  .counts .ok { color: var(--ok); font-weight: 600; }
-  .counts .error { color: var(--error); font-weight: 600; }
-  .counts .skipped { color: var(--skip); font-weight: 600; }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; white-space: nowrap; }
-  th { background: #f9fafb; position: sticky; top: 0; }
-  th.priority-col, td.priority-col { background: #fffbeb; }
-  th.priority-col { color: #92400e; }
-  .table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-  #previewOutput, #dryRunOutput { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
-  .exclude-box textarea { width: 100%; min-height: 50px; font-family: monospace; font-size: 12px; padding: 6px; border-radius: 6px; border: 1px solid var(--border); }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
 <header>
   <h1>AlgoTest Sweeper</h1>
-  <p>Set ranges + intervals for each parameter, preview the grid, then run it against your logged-in AlgoTest session.</p>
+  <p>Set ranges + intervals for each parameter, preview the grid, then run it against your logged-in AlgoTest session. <a href="/analyze">Analyze all results &rarr;</a></p>
 </header>
 
 <main>
+
+<div id="loginBanner" class="login-banner" style="display:none;">
+  <span class="msg" id="loginBannerMsg"></span>
+  <button class="primary small" id="loginBannerActionBtn" onclick="openLoginWindow(false, loginBannerAccount)">Open login window</button>
+  <button class="secondary small" onclick="dismissLoginBanner()">Dismiss</button>
+</div>
+
+<div class="row" style="align-items:center; margin:8px 0 16px; flex-wrap:wrap;">
+  <button class="secondary small" id="relogin_account1_btn" onclick="openLoginWindow(true, 1)">Logout &amp; re-login Account 1</button>
+  <button class="secondary small" id="relogin_account2_btn" onclick="openLoginWindow(true, 2)">Logout &amp; re-login Account 2</button>
+  <button class="secondary small" id="relogin_account3_btn" onclick="openLoginWindow(true, 3)">Logout &amp; re-login Account 3</button>
+  <span style="font-size:12px;color:var(--muted);">Opens a real browser window for that account, logs out, then waits for you to log back in - use this before a long break (or when a run stalls with no errors, which usually means a session quietly expired) so each account's session lasts as long as possible.</span>
+</div>
+
+<div id="comboDetailModal" class="modal-overlay" onclick="if (event.target === this) closeComboDetail()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Combo detail</h3>
+      <button class="secondary small" onclick="closeComboDetail()">Close</button>
+    </div>
+    <div id="comboDetailBody" class="modal-body"></div>
+    <div style="padding:10px 18px; border-top:1px solid var(--border);">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button class="primary small" id="launchComboBtn" onclick="launchCombo(false)">Launch in AlgoTest</button>
+        <button class="secondary small" id="launchSaveComboBtn" onclick="launchCombo(true)">Launch &amp; Save</button>
+        <button class="secondary small" id="closeLaunchBtn" onclick="closeLaunchedBrowser()" style="display:none;">Close browser window</button>
+        <span id="launchComboStatus" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <div id="launchComparisonBox" style="margin-top:8px; max-height:220px; overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
 
   <section class="card">
     <h2>Instrument &amp; period</h2>
@@ -155,6 +54,10 @@
         <select id="instrument">
           <option value="NIFTY">NIFTY</option>
           <option value="SENSEX">SENSEX</option>
+          <option value="BANKNIFTY">BANKNIFTY</option>
+          <option value="MIDCPNIFTY">MIDCPNIFTY</option>
+          <option value="FINNIFTY">FINNIFTY</option>
+          <option value="BANKEX">BANKEX</option>
         </select>
       </div>
       <div class="field">
@@ -226,18 +129,32 @@
     </div>
 
     <div class="subsection">
-      <h3>Stop Loss (Percent %)</h3>
-      <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_stoploss_enabled"> Enable</label>
-      <div class="range-group">
-        <div class="field"><label>From</label><input type="number" id="legrisk_stoploss_min" value="20"></div>
-        <div class="field"><label>To</label><input type="number" id="legrisk_stoploss_max" value="20"></div>
-        <div class="field"><label>Interval</label><input type="number" id="legrisk_stoploss_step" value="10"></div>
+      <h3>Stop Loss</h3>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Either or both basis can be checked - tried as separate alternatives (not combined together).</p>
+      <div class="row">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_stoploss_enabled"> Percent (%, of premium)</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="legrisk_stoploss_min" value="20"></div>
+            <div class="field"><label>To</label><input type="number" id="legrisk_stoploss_max" value="20"></div>
+            <div class="field"><label>Interval</label><input type="number" id="legrisk_stoploss_step" value="10"></div>
+          </div>
+        </div>
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_stoploss_underlying_enabled"> Underlying %</label>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 6px;max-width:220px;">Triggers off a move in the underlying's price, not the option premium - capped at 1% since a bigger move practically never happens intraday (e.g. 0.15-0.20, not 15-20).</p>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="legrisk_stoploss_underlying_min" value="0.2" max="1" step="0.01"></div>
+            <div class="field"><label>To</label><input type="number" id="legrisk_stoploss_underlying_max" value="0.2" max="1" step="0.01"></div>
+            <div class="field"><label>Interval</label><input type="number" id="legrisk_stoploss_underlying_step" value="0.05" step="0.01"></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="subsection">
       <h3>Trail SL</h3>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Check either or both - each gets its own range, tried as separate alternatives (not combined).</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Check either or both - each gets its own range, tried as separate alternatives (not combined). Requires Stop Loss (above) to be enabled too - AlgoTest trails the Stop Loss, so it can't run standalone. X must be &gt;= Y (AlgoTest: "Having a TSL value where X &lt; Y will lead to backtest and live results not matching") - X &lt; Y pairs are dropped automatically, shrinking the combination count.</p>
       <div class="row">
         <div>
           <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_trail_points_enabled"> Points</label>
@@ -276,6 +193,61 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="subsection">
+      <h3>Simple Momentum</h3>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Entry criteria: only enter the leg once the premium has moved this percent up/down. Check either or both - each gets its own range, tried as separate alternatives (not combined).</p>
+      <div class="row">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_momentum_up_enabled"> Up %</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="legrisk_momentum_up_min" value="5"></div>
+            <div class="field"><label>To</label><input type="number" id="legrisk_momentum_up_max" value="10"></div>
+            <div class="field"><label>Interval</label><input type="number" id="legrisk_momentum_up_step" value="1"></div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_momentum_down_enabled"> Down %</label>
+          <div class="range-group">
+            <div class="field"><label>From</label><input type="number" id="legrisk_momentum_down_min" value="5"></div>
+            <div class="field"><label>To</label><input type="number" id="legrisk_momentum_down_max" value="10"></div>
+            <div class="field"><label>Interval</label><input type="number" id="legrisk_momentum_down_step" value="1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subsection">
+      <h3>Re-entry on SL</h3>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">Re-enter the leg after it's stopped out. Check any combination - each tried as a separate alternative, never combined on one combo (AlgoTest's own Re-entry on SL only holds one type per leg at a time, same as RE ASAP vs RE COST already worked).</p>
+      <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="legrisk_reentry_sl_enabled"> Enable</label>
+      <div class="row" style="align-items:center;">
+        <label class="checkbox-row"><input type="checkbox" id="legrisk_reentry_sl_type_RE_ASAP" checked> RE ASAP</label>
+        <label class="checkbox-row"><input type="checkbox" id="legrisk_reentry_sl_type_RE_COST"> RE COST</label>
+        <label class="checkbox-row"><input type="checkbox" id="legrisk_reentry_sl_type_LAZY_LEG"> Lazy Leg</label>
+        <div class="field"><label>Re-entry count</label><input type="number" id="legrisk_reentry_sl_count" value="1" min="1" max="6"></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0;">"Re-entry count" only applies to RE ASAP/RE COST above - Lazy Leg has no count.</p>
+      <p id="lazyLegRuleText" style="font-size:12px;color:var(--muted);margin:8px 0 0;display:none;">
+        <strong>Lazy Leg</strong>: instead of re-entering the same strike, introduces a new, farther-OTM
+        leg once the original is stopped out - smoothing the loss and catching a reversal. Every value
+        below is <strong>derived</strong> from that same leg's own already-chosen settings - not
+        something you configure separately, and not a new sweep dimension on its own (it's one more
+        alternative within this same Re-entry on SL choice, same as RE ASAP/RE COST):
+        <ul style="margin:6px 0 0;padding-left:20px;">
+          <li><strong>Strike</strong>: 2 strikes further OTM than the original (ATM&rarr;OTM2, OTM2&rarr;OTM4, ITM1&rarr;OTM1, ...), or half the premium for a premium-based leg.</li>
+          <li><strong>Stop Loss % and Trailing SL</strong>: copied exactly from the original leg.</li>
+          <li><strong>Momentum (reversal confirmation)</strong>: underlying moves back 20pts (NIFTY) / 50pts (SENSEX) before the lazy leg fires - down for a CE original, up for a PE original.</li>
+        </ul>
+        <strong>Only applies when</strong> the original leg's own Stop Loss is percentage-based
+        (not "Underlying %") <strong>and</strong> between 25%-60% - outside that range, or with no
+        leg-level Stop Loss at all, that leg simply gets no lazy leg for that combo (it falls back to
+        no re-entry, same as if Lazy Leg had never been checked). Only NIFTY and SENSEX
+        have a confirmed momentum threshold - other instruments are not eligible yet.
+      </p>
     </div>
   </section>
 
@@ -335,6 +307,7 @@
       <label class="checkbox-row"><input type="checkbox" id="trail_sl_enabled"> Enable</label>
       <label class="checkbox-row"><input type="checkbox" id="trail_sl_include_none" checked> Also try "no trailing SL"</label>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin:4px 0 8px;">"For every increase in profit by" must be &gt;= "Trail profit by" (same AlgoTest constraint as leg-level Trail SL) - pairs that violate this are dropped automatically.</p>
     <div class="row" style="margin-top:10px;">
       <div class="range-group">
         <strong style="font-size:12px;">If profit reaches</strong>
@@ -383,11 +356,82 @@
     </p>
     <div class="row">
       <div class="field"><label>Slippage (%)</label><input type="number" id="slippage_pct" value="1" step="0.1"></div>
+      <div class="field">
+        <label>Brokerage rate (Rs per order)</label>
+        <input type="number" id="brokerage_rate" value="20" step="1">
+      </div>
       <div class="field wide">
         <label>DTE (days to expiry) - select one or more</label>
         <div class="row" id="dteCheckboxes" style="gap:10px;"></div>
       </div>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      The brokerage rate is a one-time AlgoTest setting that persists for the whole
+      sweep session, so it's only set once (on the first combo), not re-applied per
+      combo.
+    </p>
+
+    <hr style="margin:14px 0; border:none; border-top:1px solid var(--border);">
+    <label class="checkbox-row"><input type="checkbox" id="auto_download_enabled" checked> Auto-download trade report for good combos</label>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 10px;">
+      Downloads a combo's trade report right after its backtest completes, if it
+      already looks good enough - avoiding a full second replay later (login + fill +
+      wait) just to fetch the report for something Correlate would have wanted
+      anyway. Saved to the same combo_id-keyed cache Correlate checks, so it's
+      simply already there when you get to it.
+    </p>
+    <div class="row" id="autoDownloadOptions">
+      <div class="field">
+        <label>Minimum Return/MaxDD</label>
+        <input type="number" id="auto_download_min_return_max_dd" value="1.5" step="0.1">
+      </div>
+      <div class="field">
+        <label>Minimum trades (0 = no minimum)</label>
+        <input type="number" id="auto_download_min_trades" value="0" step="1" min="0">
+      </div>
+    </div>
+    <label class="checkbox-row" style="margin-top:6px;">
+      <input type="checkbox" id="capture_dte_individually" checked>
+      Capture individual DTE reports (instead of one combined)
+    </label>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Only matters when more than one DTE is checked above. Off (default): one
+      result row per combo, reflecting every checked DTE combined - today's
+      behavior, unchanged. On: re-filters that SAME already-completed backtest to
+      one DTE at a time (no extra "Start Backtest") and captures each as its own
+      row - e.g. checking DTE 0, 1, 2 always writes three independently-rankable
+      rows for the combo instead of one blended result, regardless of how good or
+      bad any of them (or the blend) turns out to be. Each variant gets its own id
+      (combo_id + "_dte" + N) so it shows up in Correlate/Portfolio like any other
+      combo - nothing about how an ordinary combo's id is computed changes. The
+      trade report FILE for a variant is still only auto-downloaded if that
+      variant's own numbers clear the "Auto-download" quality bar above (same rule
+      as the combined case, just judged per-DTE instead of on the blend) - the row
+      itself, which is what you need to compare DTEs against each other, is never
+      gated on that.
+    </p>
+    <label class="checkbox-row" style="margin-top:6px;">
+      <input type="checkbox" id="skip_known_duplicate_strategies" checked>
+      Skip strategies already known under a different date range (recommended)
+    </label>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      A combo's id is a hash of its ENTIRE definition, including start/end date -
+      an identical strategy re-swept with a different end date (e.g. a trailing
+      "today") gets a completely different id, silently fragmenting its own
+      history instead of extending it. On (default): a combo whose underlying
+      strategy already has a record in output/combo_registry.csv under a
+      different id is not replayed - it's captured into a pending queue instead
+      (see the panel below), for Force re-download to bring current against its
+      EXISTING id. Off: every combo is always replayed as if new, no registry
+      lookup at all - today's original behavior, for a deliberate full
+      rediscovery pass.
+    </p>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      A combo must also be profitable (total P&amp;L &gt; 0) - that gate is always on,
+      not configurable. Return/MaxDD (not reward:risk or win rate) is the quality bar
+      on top of that, since those two trade off against each other - gating on
+      either alone would systematically exclude a whole category of good strategies.
+    </p>
   </section>
 
   <section class="card">
@@ -397,9 +441,25 @@
       <div class="field"><label>Result timeout (s)</label><input type="number" id="result_timeout" value="180"></div>
       <div class="field"><label>Max retries</label><input type="number" id="max_retries" value="2"></div>
       <div class="field"><label>Limit (smoke test)</label><input type="number" id="limit" placeholder="all"></div>
+      <div class="field"><label id="parallelism_label">Parallel tabs (Account 1)</label><input type="number" id="parallelism" value="1" min="1" max="15"></div>
+      <div class="field"><label id="parallelism_account2_label">Parallel tabs (Account 2)</label><input type="number" id="parallelism_account2" value="0" min="0" max="15"></div>
+      <div class="field"><label id="parallelism_account3_label">Parallel tabs (Account 3)</label><input type="number" id="parallelism_account3" value="0" min="0" max="15"></div>
       <label class="checkbox-row"><input type="checkbox" id="headless"> Headless</label>
       <label class="checkbox-row"><input type="checkbox" id="shuffle"> Shuffle order</label>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Parallel tabs run independent combos concurrently in the same browser session
+      (AlgoTest allows up to 15 concurrent strategy runs per account). 1 = sequential
+      (today's behavior). Headless is effectively required above a few tabs.
+      Accounts 2/3 (0 = disabled) use ALGOTEST_EMAIL_2/PASSWORD_2 and
+      ALGOTEST_EMAIL_3/PASSWORD_3 from .env, each with its own separate browser
+      profile - confirmed live that AlgoTest throttles concurrency per account, not
+      per machine, so splitting workers across accounts gives real additional
+      throughput instead of competing for one budget. Combos are still never run
+      twice - each one goes to exactly one worker on one account. Total tabs across
+      all accounts are real browser processes on this machine - watch memory (not
+      just CPU) before pushing the total much past what you've already tested.
+    </p>
   </section>
 
   <section class="card">
@@ -407,8 +467,14 @@
     <div class="actions">
       <button class="secondary" onclick="preview()">Preview combinations</button>
       <button class="primary" id="startBtn" onclick="startRun()">Start</button>
+      <button class="secondary" id="resumeBtn" onclick="startRun(true)">Resume last run</button>
       <button class="danger" id="stopBtn" onclick="stopRun()" disabled>Stop</button>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
+      "Resume last run" continues the most recent CSV where it left off (e.g. after a
+      login/session interruption) instead of starting over - combos already marked ok
+      are skipped, not re-run.
+    </p>
     <div id="previewOutput" style="margin-top:10px;"></div>
 
     <div style="margin-top:16px;" class="status-bar">
@@ -422,13 +488,138 @@
       <span class="ok" id="okCount">ok: 0</span>
       <span class="error" id="errorCount">error: 0</span>
       <span class="skipped" id="skippedCount">skipped: 0</span>
+      <span class="skipped" id="duplicateCount" style="display:none;"></span>
     </div>
+    <div id="periodInfo" style="margin-top:6px; font-size:12px; color:var(--muted); display:none;"></div>
     <div id="statusMessage" style="margin-top:6px; font-size:12px; color:var(--error);"></div>
   </section>
 
+  <section class="card" id="pendingDuplicatesCard" style="display:none;">
+    <h2>Strategies pending force-refresh</h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+      Found during a sweep (see "Skip strategies already known under a
+      different date range" above) - each of these is a strategy already in
+      output/combo_registry.csv under a different combo_id (a different date
+      range), captured here instead of being replayed as new. Force
+      re-download brings each one current against its OWN existing combo_id -
+      usable any time, whether the sweep that found them is still running,
+      stopping, or already done.
+    </p>
+    <p id="pendingDuplicatesCount" style="font-size:13px;font-weight:600;"></p>
+    <button class="secondary" onclick="startDuplicateRefresh()" id="startDuplicateRefreshBtn">Force re-download these now</button>
+    <div id="duplicateRefreshStatus" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
+  </section>
+
   <section class="card">
-    <h2>Results <span style="font-weight:400; color:var(--muted); font-size:12px;">(sorted by Return/MaxDD, highest first)</span></h2>
-    <div class="table-scroll">
+    <h2>Results <span style="font-weight:400; color:var(--muted); font-size:12px;" id="resultsSortLabel">(sorted by Best of Best, highest first)</span></h2>
+
+    <div class="row" style="align-items:center;">
+      <strong style="font-size:13px;">Filter by Instrument</strong>
+      <button class="secondary small" id="clearInstrumentFilterBtn" onclick="clearInstrumentFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <div id="instrumentFilterRow" class="row" style="margin-top:8px; gap:6px;"></div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      One pill per index actually run (e.g. NIFTY vs BANKNIFTY) - now that one master
+      CSV can hold results for several indices, this narrows everything below to a
+      single one. Applied before every other filter.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <div class="field">
+        <label>Sort by</label>
+        <select id="sortBySelect" onchange="onSortByChange()"></select>
+      </div>
+      <div class="field" id="combinedWeightField" style="display:none;">
+        <label>RMDD weight (%, rest goes to Reward:Risk)</label>
+        <input type="number" id="combinedWeightInput" value="65" min="0" max="100" onchange="onSortByChange()">
+      </div>
+    </div>
+    <p id="combinedWeightHelp" style="font-size:12px;color:var(--muted);margin:6px 0 0;display:none;">
+      "Best of Best" blends Return/MaxDD (overall equity-curve risk-adjusted return -
+      the strongest single signal for whether the drawdown is survivable) with
+      Reward:Risk ratio (per-trade payoff shape - a check that the return isn't just
+      one lucky trade). Both are normalized before blending. 65% RMDD / 35% Reward:Risk
+      is a starting suggestion, not a rule - raise the RMDD weight to prioritize
+      surviving drawdown, lower it to prioritize consistent per-trade payoff.
+    </p>
+    <p style="font-size:12px;color:var(--muted);margin:8px 0 0;">
+      Looking for the best strategies that AREN'T just correlated clones of each
+      other? Head to <a href="/analyze">Analyze all results &rarr;</a> - filter/sort
+      there, then use "Uncorrelated strategies" below its results table.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:10px;">
+      <label class="checkbox-row"><input type="radio" name="timeInterval" value="15" onchange="onTimeIntervalChange()"> Every 15 min</label>
+      <label class="checkbox-row"><input type="radio" name="timeInterval" value="30" onchange="onTimeIntervalChange()"> Every 30 min</label>
+      <label class="checkbox-row"><input type="radio" name="timeInterval" value="60" onchange="onTimeIntervalChange()"> Every 1 hour</label>
+      <button class="secondary small" id="clearTimeFilterBtn" onclick="clearTimeFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <div id="timeBucketRow" class="row" style="margin-top:8px; gap:6px;"></div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Groups your accumulated results by entry time (anchored to market open 09:15).
+      Pick an interval, then click a slot to see just its results below, sorted by
+      whichever metric is chosen above. Grey/0 slots have no results yet, so there's
+      nothing to check there.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <div class="field"><label>Entry time from</label><input type="time" id="entryTimeFrom"></div>
+      <div class="field"><label>Entry time to</label><input type="time" id="entryTimeTo"></div>
+      <button class="secondary small" onclick="applyEntryTimeFilter()">Apply</button>
+      <button class="secondary small" id="clearEntryTimeFilterBtn" onclick="clearEntryTimeFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Pick an arbitrary window instead of a fixed 15/30/60-min slot above (e.g.
+      "09:20 to 09:52") - both bounds are inclusive, and this combines with whichever
+      slot/instrument/DTE filters are already active.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <strong style="font-size:13px;">Filter by DTE</strong>
+      <button class="secondary small" id="clearDteFilterBtn" onclick="clearDteFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <div id="dteFilterRow" class="row" style="margin-top:8px; gap:6px;"></div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      One pill per exact DTE combination actually run (e.g. "0" vs "0,1,2") - keeps a
+      new DTE sweep merged into this same CSV from blending into results run with a
+      different DTE setting. "unknown" covers rows from before DTE was tracked per-row.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <strong style="font-size:13px;">Filter by Exit time</strong>
+      <button class="secondary small" id="clearExitTimeFilterBtn" onclick="clearExitTimeFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <div id="exitTimeFilterRow" class="row" style="margin-top:8px; gap:6px;"></div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Every exact exit time actually present (not a generic 15/30/60-min grid) - real
+      exit times cluster into a handful of specific values, so a value here is exactly
+      what some combo actually used.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <div class="field"><label>Exit time from</label><input type="time" id="exitTimeFrom"></div>
+      <div class="field"><label>Exit time to</label><input type="time" id="exitTimeTo"></div>
+      <button class="secondary small" onclick="applyExitTimeRangeFilter()">Apply</button>
+      <button class="secondary small" id="clearExitTimeRangeFilterBtn" onclick="clearExitTimeRangeFilter()" style="display:none;">Clear filter</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      An arbitrary window instead of the exact-value pills above (e.g. "12:45 to
+      13:50" to catch every morning-session exit at once) - both bounds are
+      inclusive, and this combines with whichever filters are already active.
+    </p>
+
+    <div class="row" style="align-items:center; margin-top:14px;">
+      <div class="field"><label>Search combo_id</label><input type="text" id="comboSearchInput" placeholder="paste or type a combo_id" style="width:220px;" onkeydown="if (event.key === 'Enter') searchCombo()"></div>
+      <button class="secondary small" onclick="searchCombo()">Search</button>
+      <button class="secondary small" id="clearComboSearchBtn" onclick="clearComboSearch()" style="display:none;">Clear search</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
+      Finds a combo_id regardless of whatever instrument/DTE/time filter is active
+      above - a partial/prefix match is enough. Click its combo_id in the result to
+      open detail and launch it in AlgoTest.
+    </p>
+
+    <div class="table-scroll" style="margin-top:10px;">
       <table id="resultsTable"><thead></thead><tbody></tbody></table>
     </div>
     <div class="row" style="margin-top:12px;">
@@ -438,9 +629,38 @@
     <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
       Coarse-to-fine refinement: re-centers every range on whatever won in the top N
       results by Return/MaxDD (and halves each interval). Review the form above before
-      running again - this overwrites your current config.
+      running again - this overwrites your current config, but the config as it was
+      just before narrowing is auto-saved below first, so you can always get back to it.
     </p>
     <div id="narrowOutput" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>Saved Executions</h2>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">
+      Save the current config together with its results CSV under a name, so you can
+      switch between different sweeps (e.g. a wide one and a narrowed one) without
+      losing either. Loading a saved execution restores its config to the form above
+      and points "Resume last run" at its specific CSV - not just whichever ran last.
+      <strong>You don't need to save anything just to try a different parallelism/account
+      split</strong> - Load, tweak the parallel-tabs fields above, then hit "Resume last
+      run" directly; it already uses whatever's in the form. Saving is only for
+      remembering a change for next time.
+    </p>
+    <div id="loadedExecutionBanner" style="display:none; font-size:12px; background:var(--card-alt, rgba(127,127,127,0.08)); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px;">
+      Currently loaded: <strong id="loadedExecutionNameLabel"></strong>
+      <button class="primary small" onclick="updateLoadedExecution()" style="margin-left:8px;">Update this execution with the form above</button>
+      <button class="secondary small" onclick="detachLoadedExecution()" style="margin-left:6px;">Detach (start fresh)</button>
+    </div>
+    <div class="row">
+      <div class="field wide"><label>Save current as (new name)</label><input type="text" id="executionSaveName" placeholder="e.g. main wide sweep"></div>
+      <button class="secondary" onclick="saveCurrentExecution()">Save as new</button>
+    </div>
+    <div id="executionsOutput" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+    <table id="executionsTable" style="margin-top:10px;">
+      <thead><tr><th>Name</th><th>CSV</th><th>Updated</th><th></th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
   </section>
 
 </main>
@@ -450,8 +670,11 @@ const STRIKE_OFFSETS = ["ITM10","ITM9","ITM8","ITM7","ITM6","ITM5","ITM4","ITM3"
   "ATM","OTM1","OTM2","OTM3","OTM4","OTM5","OTM6","OTM7","OTM8","OTM9","OTM10"];
 
 // Order here doubles as the results-table priority order (see renderResults).
+// "combined" isn't a real CSV column (it's the blended Return/MaxDD + Reward:Risk
+// ranking computed server-side) - present.has() filters it out of the table columns
+// automatically, it only ever shows up in the sort dropdown.
 const PRIORITY_METRICS = [
-  "return_max_dd", "reward_risk_ratio", "expectancy", "max_loss", "max_profit",
+  "combined", "return_max_dd", "reward_risk_ratio", "expectancy", "max_loss", "max_profit",
   "avg_profit_winning_trades", "avg_loss_per_trade", "win_rate", "loss_rate",
 ];
 
@@ -659,12 +882,21 @@ function collectConfig() {
       target_pct: rangeField("legrisk_target", {min:20,max:20,step:10}),
       stoploss_enabled: document.getElementById("legrisk_stoploss_enabled").checked,
       stoploss_pct: rangeField("legrisk_stoploss", {min:20,max:20,step:10}),
+      stoploss_underlying_enabled: document.getElementById("legrisk_stoploss_underlying_enabled").checked,
+      stoploss_underlying_pct: rangeField("legrisk_stoploss_underlying", {min:0.2,max:0.2,step:0.05}),
       trail_points_enabled: document.getElementById("legrisk_trail_points_enabled").checked,
       trail_points_x: rangeField("legrisk_trail_points_x", {min:10,max:10,step:5}),
       trail_points_y: rangeField("legrisk_trail_points_y", {min:5,max:5,step:5}),
       trail_percentage_enabled: document.getElementById("legrisk_trail_percentage_enabled").checked,
       trail_percentage_x: rangeField("legrisk_trail_percentage_x", {min:1,max:1,step:0.5}),
       trail_percentage_y: rangeField("legrisk_trail_percentage_y", {min:0.5,max:0.5,step:0.5}),
+      momentum_up_enabled: document.getElementById("legrisk_momentum_up_enabled").checked,
+      momentum_up_pct: rangeField("legrisk_momentum_up", {min:5,max:10,step:1}),
+      momentum_down_enabled: document.getElementById("legrisk_momentum_down_enabled").checked,
+      momentum_down_pct: rangeField("legrisk_momentum_down", {min:5,max:10,step:1}),
+      reentry_sl_enabled: document.getElementById("legrisk_reentry_sl_enabled").checked,
+      reentry_sl_types: ["RE_ASAP", "RE_COST", "LAZY_LEG"].filter(t => document.getElementById("legrisk_reentry_sl_type_" + t).checked),
+      reentry_sl_count: parseInt(document.getElementById("legrisk_reentry_sl_count").value || "1"),
     },
     overall_stoploss: {
       use_percentage: document.getElementById("stoploss_use_percentage").checked,
@@ -688,11 +920,20 @@ function collectConfig() {
     limit: document.getElementById("limit").value ? parseInt(document.getElementById("limit").value) : null,
     shuffle: document.getElementById("shuffle").checked,
     slippage_pct: parseFloat(document.getElementById("slippage_pct").value || "1"),
+    brokerage_rate: parseFloat(document.getElementById("brokerage_rate").value || "20"),
+    auto_download_enabled: document.getElementById("auto_download_enabled").checked,
+    auto_download_min_return_max_dd: parseFloat(document.getElementById("auto_download_min_return_max_dd").value || "1.5"),
+    auto_download_min_trades: parseInt(document.getElementById("auto_download_min_trades").value || "0"),
+    capture_dte_individually: document.getElementById("capture_dte_individually").checked,
+    skip_known_duplicate_strategies: document.getElementById("skip_known_duplicate_strategies").checked,
     dte_values: Array.from(document.querySelectorAll('#dteCheckboxes input:checked')).map(el => parseInt(el.value)),
     delay: parseFloat(document.getElementById("delay").value || "2"),
     headless: document.getElementById("headless").checked,
     result_timeout: parseInt(document.getElementById("result_timeout").value || "180"),
     max_retries: parseInt(document.getElementById("max_retries").value || "2"),
+    parallelism: parseInt(document.getElementById("parallelism").value || "1"),
+    parallelism_account2: parseInt(document.getElementById("parallelism_account2").value || "0"),
+    parallelism_account3: parseInt(document.getElementById("parallelism_account3").value || "0"),
   };
 }
 
@@ -734,12 +975,25 @@ function applyConfig(cfg) {
   setRangeField("legrisk_target", lr.target_pct);
   document.getElementById("legrisk_stoploss_enabled").checked = lr.stoploss_enabled;
   setRangeField("legrisk_stoploss", lr.stoploss_pct);
+  document.getElementById("legrisk_stoploss_underlying_enabled").checked = lr.stoploss_underlying_enabled;
+  setRangeField("legrisk_stoploss_underlying", lr.stoploss_underlying_pct);
   document.getElementById("legrisk_trail_points_enabled").checked = lr.trail_points_enabled;
   setRangeField("legrisk_trail_points_x", lr.trail_points_x);
   setRangeField("legrisk_trail_points_y", lr.trail_points_y);
   document.getElementById("legrisk_trail_percentage_enabled").checked = lr.trail_percentage_enabled;
   setRangeField("legrisk_trail_percentage_x", lr.trail_percentage_x);
   setRangeField("legrisk_trail_percentage_y", lr.trail_percentage_y);
+  document.getElementById("legrisk_momentum_up_enabled").checked = lr.momentum_up_enabled;
+  setRangeField("legrisk_momentum_up", lr.momentum_up_pct);
+  document.getElementById("legrisk_momentum_down_enabled").checked = lr.momentum_down_enabled;
+  setRangeField("legrisk_momentum_down", lr.momentum_down_pct);
+  document.getElementById("legrisk_reentry_sl_enabled").checked = lr.reentry_sl_enabled;
+  const reentryTypesWanted = new Set(lr.reentry_sl_types || []);
+  ["RE_ASAP", "RE_COST", "LAZY_LEG"].forEach(t => {
+    document.getElementById("legrisk_reentry_sl_type_" + t).checked = reentryTypesWanted.has(t);
+  });
+  document.getElementById("legrisk_reentry_sl_count").value = lr.reentry_sl_count;
+  syncLazyLegRuleText();
 
   document.getElementById("stoploss_use_percentage").checked = cfg.overall_stoploss.use_percentage;
   setRangeField("stoploss_pct", cfg.overall_stoploss.percentage_range);
@@ -757,6 +1011,18 @@ function applyConfig(cfg) {
   setRangeField("trail_trail_by", cfg.trail_sl_trail_by);
   document.getElementById("exclude").value = (cfg.exclude || []).join("\n");
   document.getElementById("slippage_pct").value = cfg.slippage_pct;
+  document.getElementById("brokerage_rate").value = cfg.brokerage_rate;
+  document.getElementById("auto_download_enabled").checked = !!cfg.auto_download_enabled;
+  document.getElementById("auto_download_min_return_max_dd").value = cfg.auto_download_min_return_max_dd ?? 1.5;
+  document.getElementById("auto_download_min_trades").value = cfg.auto_download_min_trades ?? 0;
+  // Sticky default ON - same convention as skip_known_duplicate_strategies below:
+  // missing/undefined (a brand-new config, or one saved before this default
+  // flipped) reads as true, so nothing silently reverts this to combined-only
+  // behind your back. An execution that was explicitly saved with this OFF still
+  // loads as OFF - that's what it actually ran with, not this app overriding a
+  // choice you made; toggle it back on yourself if you want that one to split too.
+  document.getElementById("capture_dte_individually").checked = cfg.capture_dte_individually !== false;
+  document.getElementById("skip_known_duplicate_strategies").checked = cfg.skip_known_duplicate_strategies !== false;
   const dteWanted = new Set(cfg.dte_values || [0]);
   document.querySelectorAll("#dteCheckboxes input").forEach(el => {
     el.checked = dteWanted.has(parseInt(el.value));
@@ -767,8 +1033,12 @@ function applyConfig(cfg) {
   document.getElementById("headless").checked = cfg.headless;
   document.getElementById("result_timeout").value = cfg.result_timeout;
   document.getElementById("max_retries").value = cfg.max_retries;
+  document.getElementById("parallelism").value = cfg.parallelism;
+  document.getElementById("parallelism_account2").value = cfg.parallelism_account2 ?? 0;
+  document.getElementById("parallelism_account3").value = cfg.parallelism_account3 ?? 0;
 
   syncAllEnableStates();
+  syncTrailRequiresStoploss();
 }
 
 // --- Grey out range fields whose "enable" checkbox is unchecked, so it's obvious
@@ -784,6 +1054,9 @@ const ENABLE_BINDINGS = [
   {checkbox: "legrisk_stoploss_enabled", prefixes: ["legrisk_stoploss"], extra: []},
   {checkbox: "legrisk_trail_points_enabled", prefixes: ["legrisk_trail_points_x", "legrisk_trail_points_y"], extra: []},
   {checkbox: "legrisk_trail_percentage_enabled", prefixes: ["legrisk_trail_percentage_x", "legrisk_trail_percentage_y"], extra: []},
+  {checkbox: "legrisk_momentum_up_enabled", prefixes: ["legrisk_momentum_up"], extra: []},
+  {checkbox: "legrisk_momentum_down_enabled", prefixes: ["legrisk_momentum_down"], extra: []},
+  {checkbox: "legrisk_reentry_sl_enabled", prefixes: [], extra: ["legrisk_reentry_sl_type_RE_ASAP", "legrisk_reentry_sl_type_RE_COST", "legrisk_reentry_sl_type_LAZY_LEG", "legrisk_reentry_sl_count"]},
 ];
 
 function syncEnableBinding(b) {
@@ -806,8 +1079,70 @@ function initEnableBindings() {
   syncAllEnableStates();
 }
 
+// AlgoTest trails the leg's Stop Loss - Trail SL silently fails to submit (a toast
+// error fades before you notice it) if Stop Loss isn't also enabled on that leg. Grey
+// out the Trail checkboxes until Stop Loss is on, and auto-uncheck them if Stop Loss
+// gets turned back off, so an invalid combination can't be built through the UI.
+const TRAIL_CHECKBOXES = ["legrisk_trail_points_enabled", "legrisk_trail_percentage_enabled"];
+
+function syncTrailRequiresStoploss() {
+  const stoplossOn = document.getElementById("legrisk_stoploss_enabled").checked;
+  TRAIL_CHECKBOXES.forEach(id => {
+    const cb = document.getElementById(id);
+    cb.disabled = !stoplossOn;
+    if (!stoplossOn && cb.checked) {
+      cb.checked = false;
+      cb.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+function initTrailRequiresStoploss() {
+  document.getElementById("legrisk_stoploss_enabled").addEventListener("change", syncTrailRequiresStoploss);
+  syncTrailRequiresStoploss();
+}
+
+// Lazy Leg is just a third checkbox alongside RE ASAP/RE COST (see
+// src/web/expand.py's _reentry_sl_choices - a combo always lands on exactly
+// ONE of them, same union-not-cross-product convention RE ASAP/RE COST
+// already had, no special exclusivity handling needed here at all). The
+// rule-text block only shows while Lazy Leg is actually checked, so it
+// doesn't take up space otherwise.
+function syncLazyLegRuleText() {
+  const lazyOn = document.getElementById("legrisk_reentry_sl_type_LAZY_LEG").checked;
+  document.getElementById("lazyLegRuleText").style.display = lazyOn ? "block" : "none";
+}
+
+function initLazyLegRuleText() {
+  document.getElementById("legrisk_reentry_sl_type_LAZY_LEG").addEventListener("change", syncLazyLegRuleText);
+  syncLazyLegRuleText();
+}
+
+// Underlying % Stop Loss is capped at 1% (see MAX_SANE_UNDERLYING_SL_PCT in
+// src/web/models.py) - a bigger move in the underlying practically never happens
+// intraday, so anything above that isn't a real stop loss. Clamped on blur, not
+// just left to the "max" attribute (which doesn't stop typing or submitting a
+// bigger value) - confirmed the exact mistake this guards against: 15-20 typed
+// where 0.15-0.20 was meant.
+function clampUnderlyingSl(el) {
+  const v = parseFloat(el.value);
+  if (!isNaN(v) && v > 1) {
+    el.value = "1";
+    el.style.outline = "2px solid var(--error)";
+    setTimeout(() => { el.style.outline = ""; }, 1500);
+  }
+}
+function initUnderlyingSlClamp() {
+  ["legrisk_stoploss_underlying_min", "legrisk_stoploss_underlying_max"].forEach(id => {
+    document.getElementById(id).addEventListener("blur", (e) => clampUnderlyingSl(e.target));
+  });
+}
+
 buildDteCheckboxes();
 initEnableBindings();
+initTrailRequiresStoploss();
+initLazyLegRuleText();
+initUnderlyingSlClamp();
 
 async function loadConfig() {
   const res = await fetch("/api/config");
@@ -818,6 +1153,16 @@ async function loadConfig() {
 async function errorDetail(res) {
   try {
     const data = await res.json();
+    // A raised HTTPException's detail is a plain string - but FastAPI's own request
+    // validation (a POST body that doesn't match the pydantic model at all, before
+    // our code even runs) returns detail as a LIST of {loc, msg, type} objects
+    // instead. Untreated, "Error: " + that array stringifies as "[object Object]"
+    // (or one per item) - useless. Render each as "field.path: message" instead.
+    if (Array.isArray(data.detail)) {
+      return data.detail
+        .map(e => `${(e.loc || []).filter(p => p !== "body").join(".")}: ${e.msg}`)
+        .join("; ");
+    }
     return data.detail || JSON.stringify(data);
   } catch {
     return await res.text();
@@ -833,19 +1178,182 @@ async function preview() {
     return;
   }
   const data = await res.json();
+  // Large sweeps get a fast SAMPLED estimate instead of the exact post-exclude count
+  // (see estimate_ui_config on the backend) - label it clearly as approximate so it's
+  // never mistaken for the precise number a smaller sweep still shows.
+  const countLine = data.estimated
+    ? `~${data.count.toLocaleString()} combination(s) after filtering (estimated from a sample; raw grid before filtering: ${data.raw_count.toLocaleString()}).`
+    : `${data.count.toLocaleString()} combination(s).`;
+  // Visible BEFORE committing to a run, not only discovered afterward in the
+  // completion summary - see SweepUIConfig.skip_known_duplicate_strategies.
+  let duplicateLine = "";
+  if (data.duplicate_count > 0) {
+    const approx = data.estimated ? "~" : "";
+    const willReplay = data.estimated ? "" : ` ${(data.count - data.duplicate_count).toLocaleString()} will actually be replayed.`;
+    duplicateLine = `\n${approx}${data.duplicate_count.toLocaleString()} already known under a different date range ` +
+      `- will be captured for Force re-download instead, not replayed.${willReplay}`;
+  }
   document.getElementById("previewOutput").textContent =
-    `${data.count} combination(s). First combos:\n` + JSON.stringify(data.sample, null, 1);
+    `${countLine}${duplicateLine} First combos:\n` + JSON.stringify(data.sample, null, 1);
 }
 
-async function startRun() {
+// Set by loadExecution() when you load a saved execution - makes "Resume last run"
+// target that specific CSV instead of just guessing "whichever ran most recently".
+let activeResumeCsvPath = null;
+// The name of whichever saved execution is currently loaded (if any) - lets
+// "Update this execution" save straight back to it without retyping the name, and
+// lets saveCurrentExecution() default new saves to the SAME csv_path instead of
+// silently falling back to whatever csv_path the server's run_state last happened
+// to hold (confirmed live: that fallback is what was corrupting a saved execution's
+// csv_path pointer when the currently-running sweep, if any, was a different one).
+let activeExecutionName = null;
+
+// The csv_path a Start/Resume click in THIS tab actually produced - separate from
+// activeResumeCsvPath (which is about a LOADED execution's static record). Set right
+// after a successful Start/Resume, cleared on Load. Fixes a real gap: saving a brand
+// new execution name AFTER a sweep is already running (not before) sent csv_path:
+// null every time, because activeResumeCsvPath had already been reset to null at the
+// end of startRun() - confirmed live: naming "SENSEX_0_1_DTE_BIGSWEEP_..." only after
+// ~900 rows were already down orphaned it from its own data, even though the sweep
+// itself was running fine and the data was never actually lost. Falling back to this
+// instead of activeResumeCsvPath (see saveCurrentExecution/updateLoadedExecution)
+// closes that gap without reintroducing the older, already-fixed bug this file's own
+// comments describe (an unrelated leftover run's csv_path getting attached to a fresh
+// name typed before ITS OWN sweep ever started) - that's exactly why this is cleared
+// on every Load, not left to linger across an explicit context switch.
+let lastStartCsvPath = null;
+
+// The instrument the currently-loaded execution was saved with. Lets
+// saveCurrentExecution() tell "fork this loaded execution under a new name" (same
+// instrument - carry its CSV forward) from "I've switched to a different
+// instrument and want a genuinely fresh execution" (its CSV is meaningless now - a
+// NIFTY config can't resume a SENSEX results file). Cleared by detach and on a
+// fresh save, same lifecycle as the two vars above.
+let loadedExecutionInstrument = null;
+
+// activeExecutionName/activeResumeCsvPath are plain in-memory variables - a page
+// refresh resets them to null with no way to recover which execution was loaded,
+// even though the server-side record is still perfectly intact. Confirmed live:
+// loading an execution, refreshing the page, then Start/Resume-ing a fresh sweep
+// left it completely unattached to that execution's name (the very auto-link
+// meant to prevent this never fires when activeExecutionName is null to begin
+// with). Persisting just the NAME across reloads and re-loading it fresh from the
+// server on page load closes that gap - the name is enough, loadExecution()
+// already re-fetches everything else (config, csv_path) live rather than trusting
+// a stale cached value.
+const ACTIVE_EXECUTION_STORAGE_KEY = "algotest_active_execution_name";
+
+function persistActiveExecutionName() {
+  try {
+    if (activeExecutionName) {
+      localStorage.setItem(ACTIVE_EXECUTION_STORAGE_KEY, activeExecutionName);
+    } else {
+      localStorage.removeItem(ACTIVE_EXECUTION_STORAGE_KEY);
+    }
+  } catch (e) {
+    // localStorage unavailable (private browsing, quota, etc.) - just means this
+    // reload-survival convenience doesn't work this session, nothing fatal.
+  }
+}
+
+// Called once at page load (see bottom of this script) - silent on failure
+// (deleted/renamed execution since the last visit) rather than surfacing an
+// error the user never asked for on a fresh page load.
+async function restoreActiveExecutionFromStorage() {
+  let savedName;
+  try {
+    savedName = localStorage.getItem(ACTIVE_EXECUTION_STORAGE_KEY);
+  } catch (e) {
+    return;
+  }
+  if (!savedName) return;
+  await loadExecution(encodeURIComponent(savedName));
+  if (activeExecutionName !== savedName) {
+    // loadExecution failed (the name no longer exists) - drop it so this doesn't
+    // silently retry (and fail) on every future page load.
+    try { localStorage.removeItem(ACTIVE_EXECUTION_STORAGE_KEY); } catch (e) {}
+  }
+}
+
+// Confirms exactly what's about to happen before Start/Resume actually fires - both
+// buttons are otherwise indistinguishable one-word labels with very different
+// consequences (a brand new CSV vs continuing a specific one, or - the mistake this
+// exists for - "Resume" silently doing nothing useful because nothing was Loaded).
+function confirmStartOrResume(resume) {
+  if (!resume) {
+    return confirm(
+      "Start will create a brand-new results file - it will NOT resume or reuse " +
+      "any previous execution's progress, even if one looks similar. Continue?"
+    );
+  }
+  if (activeResumeCsvPath) {
+    const filename = activeResumeCsvPath.split("/").pop();
+    const label = activeExecutionName ? `"${activeExecutionName}" (${filename})` : filename;
+    return confirm(`Resume will continue ${label}, skipping combos already completed there. Continue?`);
+  }
+  return confirm(
+    "No saved execution is loaded, so there is no confirmed file to resume into.\n\n" +
+    "This will only work if a sweep already ran earlier in THIS server session - " +
+    "otherwise it will fail outright. Click \"Load\" on the execution you want to " +
+    "resume first for a safe, correct resume.\n\nContinue anyway?"
+  );
+}
+
+async function startRun(resume = false) {
+  if (!confirmStartOrResume(resume)) return;
   const cfg = collectConfig();
-  document.getElementById("statusMessage").textContent = "Starting...";
-  const res = await fetch("/api/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
+  document.getElementById("statusMessage").textContent = resume ? "Resuming..." : "Starting...";
+  let url = "/api/run";
+  if (resume) {
+    url += "?resume=true";
+    if (activeResumeCsvPath) url += "&resume_csv=" + encodeURIComponent(activeResumeCsvPath);
+  }
+  const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
   if (!res.ok) {
     document.getElementById("statusMessage").textContent = "Error: " + await errorDetail(res);
     return;
   }
   document.getElementById("statusMessage").textContent = "";
+  // A named execution that has no CSV attached yet (saved before its first run, or
+  // loaded back after one that never got linked) gets one now - this is the fix for
+  // executions silently going orphaned (see "NIFTY MIDDAY_1121_1156"). Only fires
+  // when there's nothing to lose - which must be checked against the SERVER's own
+  // stored record for this name, not just the local activeResumeCsvPath variable:
+  // that goes back to null after every successful start/resume (a few lines below),
+  // so a loaded execution that already has real progress looks "orphaned" here too
+  // the moment a second Start/Resume happens without an explicit re-Load in between.
+  // Confirmed live: this silently overwrote "NIFTY_CAS_0_1_2_DTE"'s csv_path (8,807
+  // completed rows) with a brand-new, nearly-empty file from an unrelated fresh
+  // Start - re-checking the server's actual record closes that gap.
+  if (activeExecutionName && !activeResumeCsvPath) {
+    const execRes = await fetch(`/api/executions/${encodeURIComponent(activeExecutionName)}`);
+    const execData = execRes.ok ? await execRes.json() : null;
+    if (execData && !execData.csv_path) {
+      const statusRes = await fetch("/api/status");
+      const status = statusRes.ok ? await statusRes.json() : {};
+      if (status.csv_path) {
+        const linkedName = activeExecutionName;
+        await saveExecutionAs(linkedName, status.csv_path);
+        document.getElementById("executionsOutput").textContent = `Linked "${linkedName}" to its new results file.`;
+        loadExecutions();
+      }
+    }
+  }
+  // From here on, the grid should track the live run_state CSV again (which now IS
+  // whatever we just started/resumed) rather than a loaded execution's static view.
+  activeResumeCsvPath = null;
+  // /api/run itself doesn't echo back the csv_path it just created/resumed into - ask
+  // /api/status directly for it (a fresh run_state.start() call always sets it before
+  // returning, so it's guaranteed to be there by the time this resolves) rather than
+  // relying on startPolling()'s first tick, which is timing-dependent and not awaited
+  // here. This is what lets "Save as new"/"Update this execution" correctly attach a
+  // name to a sweep you name only AFTER starting it (see lastStartCsvPath's comment).
+  try {
+    const status = await fetch("/api/status").then(r => r.json());
+    lastStartCsvPath = status.csv_path || null;
+  } catch {
+    lastStartCsvPath = null;
+  }
   startPolling();
 }
 
@@ -860,28 +1368,355 @@ async function narrowToTop() {
   }
   const cfg = await res.json();
   applyConfig(cfg);
-  out.textContent = `Ranges narrowed around your top ${topN} result(s) by Return/MaxDD. Review the form above, then Preview/Start again.`;
+  out.textContent = `Ranges narrowed around your top ${topN} result(s) by Return/MaxDD. Your pre-narrow config was auto-saved below. Review the form above, then Preview/Start again.`;
+  loadExecutions();
 }
 
 async function stopRun() {
   await fetch("/api/stop", {method: "POST"});
 }
 
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s ?? "";
+  return div.innerHTML;
+}
+
+async function loadExecutions() {
+  const res = await fetch("/api/executions");
+  const executions = res.ok ? await res.json() : [];
+  const tbody = document.querySelector("#executionsTable tbody");
+  tbody.innerHTML = executions.map(e => `
+    <tr>
+      <td>${escapeHtml(e.name)}</td>
+      <td style="font-size:11px;color:var(--muted);">${escapeHtml((e.csv_path || "").split("/").pop())}</td>
+      <td style="font-size:11px;color:var(--muted);">${escapeHtml((e.updated_at || "").replace("T", " ").slice(0, 19))}</td>
+      <td><button class="secondary" onclick="loadExecution('${encodeURIComponent(e.name)}')">Load</button></td>
+      <td><button class="danger" onclick="deleteExecutionByName('${encodeURIComponent(e.name)}')">Delete</button></td>
+    </tr>
+  `).join("") || `<tr><td colspan="5" style="color:var(--muted);">No saved executions yet.</td></tr>`;
+}
+
+async function saveExecutionAs(name, csvPath) {
+  const out = document.getElementById("executionsOutput");
+  if (!name) {
+    out.textContent = "Give it a name first.";
+    return false;
+  }
+  const cfg = collectConfig();
+  // Always pass csv_path explicitly (even when null) - the backend now stores exactly
+  // what's sent, never guessing from the server's run_state, so "which CSV does this
+  // name point to" is fully predictable from the UI's own state.
+  const res = await fetch(`/api/executions/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({cfg, csv_path: csvPath}),
+  });
+  if (!res.ok) {
+    out.textContent = "Error: " + await errorDetail(res);
+    return false;
+  }
+  // A saved execution is now the active one too, same as if it had just been
+  // Loaded - this is what lets startRun() auto-attach the CSV a subsequent Start
+  // produces (see there), and lets "Update this execution" work right after a
+  // "Save as new" without a separate Load round-trip first.
+  activeExecutionName = name;
+  activeResumeCsvPath = csvPath || null;
+  loadedExecutionInstrument = cfg.instrument || null;
+  persistActiveExecutionName();
+  document.getElementById("loadedExecutionBanner").style.display = "";
+  document.getElementById("loadedExecutionNameLabel").textContent = name;
+  return true;
+}
+
+// Clears the loaded-execution context without a page refresh: the form stays
+// exactly as you have it, but Save/Resume stop pointing at the old execution and
+// its CSV. This is the clean way to move from "I loaded SENSEX_..." to "now I'm
+// setting up a fresh NIFTY sweep" - refreshing the page does NOT do this (it
+// re-restores the last-loaded execution from browser storage on purpose).
+function detachLoadedExecution() {
+  activeExecutionName = null;
+  activeResumeCsvPath = null;
+  lastStartCsvPath = null;
+  loadedExecutionInstrument = null;
+  persistActiveExecutionName();
+  document.getElementById("loadedExecutionBanner").style.display = "none";
+  document.getElementById("executionsOutput").textContent =
+    "Detached. The form is unchanged, but Save/Resume no longer point at any saved execution - Start will create a fresh results file.";
+}
+
+async function saveCurrentExecution() {
+  const name = document.getElementById("executionSaveName").value.trim();
+  const out = document.getElementById("executionsOutput");
+  // Saving "as new" while an execution is loaded defaults to branching from that
+  // execution's own csv_path (same accumulated results, new name to diverge under) -
+  // not from whatever the server's run_state currently holds. Confirmed live: this
+  // silently attached a STALE csv_path (left over from a previously loaded,
+  // unrelated execution) to a brand-new name typed before its own sweep had even
+  // been started - the new name looked fresh but actually pointed at someone
+  // else's data. Showing exactly which file is about to be attached turns that
+  // into a deliberate choice instead of an easy-to-miss default; skipped entirely
+  // when nothing is currently loaded (activeResumeCsvPath null) - nothing stale to
+  // confirm in that case.
+  // A loaded execution's CSV is only worth carrying forward under a new name if
+  // you're still on the SAME instrument (forking a sweep to diverge its settings).
+  // Once the form's instrument differs, that CSV is meaningless for the new name -
+  // a NIFTY config can't resume a SENSEX results file - so this is a genuinely
+  // fresh execution, not a fork: don't attach the old CSV, and don't nag about it.
+  const formInstrument = document.getElementById("instrument").value;
+  const divergedInstrument =
+    loadedExecutionInstrument && formInstrument && formInstrument !== loadedExecutionInstrument;
+  if (activeResumeCsvPath && !divergedInstrument) {
+    const filename = activeResumeCsvPath.split("/").pop();
+    const proceed = confirm(
+      `"${name}" will be saved pointing at ${filename} (currently loaded).\n\n` +
+      "If you meant to create a fresh execution for a sweep you haven't started yet " +
+      "(not fork this same data under a new name), click Cancel, start that sweep " +
+      "first, then save.\n\nContinue?"
+    );
+    if (!proceed) return;
+  }
+  // Falls back to lastStartCsvPath when nothing is Loaded - covers naming a sweep
+  // only AFTER starting it, which activeResumeCsvPath alone can't (it's reset to
+  // null the moment Start/Resume succeeds - see lastStartCsvPath's own comment).
+  // A diverged instrument forces a clean null - Start will create its own CSV.
+  const csvToAttach = divergedInstrument ? null : (activeResumeCsvPath || lastStartCsvPath);
+  const ok = await saveExecutionAs(name, csvToAttach);
+  if (!ok) return;
+  out.textContent = divergedInstrument
+    ? `Saved "${name}" as a fresh execution - the loaded one was a different instrument, so no CSV is attached. Start will create one.`
+    : `Saved "${name}".`;
+  document.getElementById("executionSaveName").value = "";
+  loadExecutions();
+}
+
+async function updateLoadedExecution() {
+  const out = document.getElementById("executionsOutput");
+  if (!activeExecutionName) {
+    out.textContent = "No execution is currently loaded - use \"Save as new\" instead.";
+    return;
+  }
+  const ok = await saveExecutionAs(activeExecutionName, activeResumeCsvPath || lastStartCsvPath);
+  if (!ok) return;
+  out.textContent = `Updated "${activeExecutionName}" with the current form.`;
+  loadExecutions();
+}
+
+async function loadExecution(encodedName) {
+  const out = document.getElementById("executionsOutput");
+  const res = await fetch(`/api/executions/${encodedName}`);
+  if (!res.ok) {
+    out.textContent = "Error: " + await errorDetail(res);
+    return;
+  }
+  const data = await res.json();
+  applyConfig(data.config);
+  activeResumeCsvPath = data.csv_path;
+  activeExecutionName = decodeURIComponent(encodedName);
+  loadedExecutionInstrument = (data.config && data.config.instrument) || null;
+  // An explicit Load is a context switch - whatever this tab last Started/Resumed
+  // before now is no longer relevant to what "save" should mean going forward (see
+  // lastStartCsvPath's own comment for the bug this prevents reintroducing).
+  lastStartCsvPath = null;
+  persistActiveExecutionName();
+  document.getElementById("loadedExecutionBanner").style.display = "";
+  document.getElementById("loadedExecutionNameLabel").textContent = activeExecutionName;
+  out.textContent = data.csv_path
+    ? `Loaded "${activeExecutionName}". Results grid and Correlate below now show this execution's data. "Resume last run" will continue ${data.csv_path.split("/").pop()} - change anything above (including parallelism) and Resume uses it directly, no save needed.`
+    : `Loaded "${activeExecutionName}" (no CSV was saved with it - Start will create a fresh one).`;
+
+  // Point the grid at this execution's CSV right away (resultsUrl()/refresh* all
+  // check activeResumeCsvPath now) - without this, loading an execution only ever
+  // changed the config form, and the grid (and Correlate) kept silently showing
+  // whichever CSV the server's live run_state last happened to hold.
+  if (data.csv_path) {
+    const res2 = await fetch(resultsUrl());
+    renderResults(await res2.json());
+    refreshInstrumentOptions();
+    refreshDteOptions();
+    refreshExitTimeOptions();
+    if (activeTimeInterval) refreshTimeBucketCounts();
+  }
+}
+
+async function deleteExecutionByName(encodedName) {
+  await fetch(`/api/executions/${encodedName}`, {method: "DELETE"});
+  if (activeExecutionName === decodeURIComponent(encodedName)) {
+    activeExecutionName = null;
+    activeResumeCsvPath = null;
+    lastStartCsvPath = null;
+    loadedExecutionInstrument = null;
+    persistActiveExecutionName();
+    document.getElementById("loadedExecutionBanner").style.display = "none";
+  }
+  await loadExecutions();
+}
+
+let currentCsvPath = null;
+
 function renderStatus(s) {
+  currentCsvPath = s.csv_path;
   const badge = document.getElementById("statusBadge");
   badge.textContent = s.status;
   badge.className = "badge " + s.status;
   const pct = s.total ? Math.round((s.current / s.total) * 100) : 0;
   document.getElementById("progressBar").style.width = pct + "%";
-  document.getElementById("progressText").textContent = `${s.current} / ${s.total}`;
+  // A sweep too large to fully expand up front reports a fast sampled ESTIMATE for
+  // total (see RunState.total_estimated) until it finishes and the real number is
+  // known - "~" flags that so it's never mistaken for the exact count a smaller
+  // sweep shows.
+  const totalText = s.total_estimated ? `~${s.total.toLocaleString()}` : s.total.toLocaleString();
+  document.getElementById("progressText").textContent = `${s.current.toLocaleString()} / ${totalText}`;
   document.getElementById("okCount").textContent = "ok: " + s.ok;
   document.getElementById("errorCount").textContent = "error: " + s.error;
   document.getElementById("skippedCount").textContent = "skipped: " + s.skipped;
-  document.getElementById("statusMessage").textContent = s.message || "";
+  const duplicateEl = document.getElementById("duplicateCount");
+  if (s.duplicate) {
+    duplicateEl.style.display = "";
+    duplicateEl.textContent = "duplicate: " + s.duplicate;
+  } else {
+    duplicateEl.style.display = "none";
+  }
 
-  const running = s.status === "running";
-  document.getElementById("startBtn").disabled = running;
-  document.getElementById("stopBtn").disabled = !running;
+  // What this run was actually configured with (see RunState.start_date/end_date/
+  // dte_values) - only populated once a run has started in *this* server process
+  // (same caveat as s.csv_path), so stays hidden before that.
+  const periodInfo = document.getElementById("periodInfo");
+  if (s.start_date) {
+    const dteText = s.dte_values && s.dte_values.length ? s.dte_values.join(",") : "-";
+    periodInfo.style.display = "block";
+    periodInfo.textContent = `Backtest period: ${s.start_date} to ${s.end_date} · DTE ${dteText}`;
+  } else {
+    periodInfo.style.display = "none";
+  }
+
+  if (s.status === "stopping") {
+    // Stop no longer kills workers mid-combo - it lets whatever's already running
+    // finish (and get recorded) while picking up no new work, so this can take a
+    // little while with several parallel workers. Without this message the click
+    // looks like it did nothing.
+    //
+    // s.in_progress (worker-process-alive count) and s.in_progress_labels (which
+    // combo(s) are ACTUALLY mid-replay right now) can legitimately disagree - a
+    // worker can be alive but between combos (its own pacing delay), in which case
+    // labels is empty even though in_progress isn't. Naming the labels when they
+    // exist is what actually lets you watch this shrink over time instead of
+    // staring at an unmoving number; falling back to the bare count (or "Stopping
+    // ...") when there's nothing to name yet still says SOMETHING is happening.
+    const n = s.in_progress || 0;
+    const labels = s.in_progress_labels || [];
+    document.getElementById("statusMessage").style.color = "var(--muted)";
+    document.getElementById("statusMessage").textContent = n > 0
+      ? `Stopping - finishing ${n} in-progress combo${n === 1 ? "" : "s"}` +
+        (labels.length ? ` (${labels.join(", ")})` : "") +
+        `, not picking up any new work...`
+      : "Stopping...";
+  } else {
+    document.getElementById("statusMessage").style.color = "var(--error)";
+    document.getElementById("statusMessage").textContent = s.message || "";
+  }
+
+  const active = s.status === "running" || s.status === "stopping";
+  document.getElementById("startBtn").disabled = active;
+  // Note: don't gate this on s.csv_path - that's only populated once a run has
+  // started in *this* server process, so it's null right after a server restart even
+  // though a previous run's CSV still exists on disk. Resume still works then, as
+  // long as you Load Execution first (which sends its exact csv_path as resume_csv) -
+  // the backend deliberately does NOT guess "the most recently modified CSV" on its
+  // own (that silently resumed into the wrong file once, re-running thousands of
+  // already-done combos), so clicking Resume with no execution loaded and no run
+  // started yet in this process returns a clear error instead.
+  document.getElementById("resumeBtn").disabled = active;
+  document.getElementById("stopBtn").disabled = s.status !== "running";
+
+  checkSweepLoginIssue(s);
+}
+
+// --- Login banner: detects a session-expired sweep error and lets you open a real
+// browser window to log back into AlgoTest, without ever touching credentials
+// yourself (there's no automated login - config/selectors.yaml has no login form
+// selectors configured, by design). ---
+let loginPollTimer = null;
+// Which account the banner's own "Open login window"/"Try again" button should act
+// on - set whenever a login flow is started (openLoginWindow) or reported by the
+// backend (pollLoginStatus), so the banner keeps acting on the right account even
+// after a page reload lands on a still-in-progress "waiting" state.
+let loginBannerAccount = 1;
+
+function renderLoginStatus(s) {
+  const banner = document.getElementById("loginBanner");
+  const msg = document.getElementById("loginBannerMsg");
+  const actionBtn = document.getElementById("loginBannerActionBtn");
+  if (s.account) loginBannerAccount = s.account;
+  const acctLabel = `Account ${loginBannerAccount}`;
+
+  if (s.status === "idle") {
+    banner.style.display = "none";
+    if (loginPollTimer) { clearInterval(loginPollTimer); loginPollTimer = null; }
+    return;
+  }
+
+  banner.style.display = "flex";
+  banner.className = "login-banner " + s.status;
+  actionBtn.style.display = "inline-block";
+  actionBtn.textContent = "Open login window";
+
+  if (s.status === "opening") {
+    msg.textContent = `Opening a browser window for you to log into AlgoTest (${acctLabel})...`;
+    actionBtn.style.display = "none";
+  } else if (s.status === "logging_out") {
+    msg.textContent = `Logging out of ${acctLabel} so you can start a fresh, longer session...`;
+    actionBtn.style.display = "none";
+  } else if (s.status === "waiting") {
+    msg.textContent = `Waiting for you to log into ${acctLabel}, in the browser window that just opened...`;
+    actionBtn.style.display = "none";
+  } else if (s.status === "logged_in") {
+    msg.textContent = `${acctLabel} logged in! You can Resume your sweep now.`;
+    actionBtn.style.display = "none";
+  } else if (s.status === "timeout" || s.status === "error") {
+    msg.textContent = s.message || `Your ${acctLabel} AlgoTest session looks logged out.`;
+    actionBtn.textContent = "Try again";
+  } else {
+    msg.textContent = s.message || `Your ${acctLabel} AlgoTest session looks logged out.`;
+  }
+
+  if (s.status === "opening" || s.status === "logging_out" || s.status === "waiting") {
+    if (!loginPollTimer) loginPollTimer = setInterval(pollLoginStatus, 2000);
+  } else if (loginPollTimer) {
+    clearInterval(loginPollTimer);
+    loginPollTimer = null;
+  }
+}
+
+async function pollLoginStatus() {
+  const res = await fetch("/api/login/status");
+  renderLoginStatus(await res.json());
+}
+
+async function openLoginWindow(relogin, account) {
+  loginBannerAccount = account || 1;
+  const params = new URLSearchParams({account: loginBannerAccount});
+  if (relogin) params.set("relogin", "true");
+  const res = await fetch(`/api/login/open?${params.toString()}`, {method: "POST"});
+  if (!res.ok) {
+    renderLoginStatus({status: "error", message: "Error: " + await errorDetail(res), account: loginBannerAccount});
+    return;
+  }
+  pollLoginStatus();
+}
+
+async function dismissLoginBanner() {
+  await fetch("/api/login/dismiss", {method: "POST"});
+  document.getElementById("loginBanner").style.display = "none";
+  if (loginPollTimer) { clearInterval(loginPollTimer); loginPollTimer = null; }
+}
+
+function checkSweepLoginIssue(s) {
+  if (s.status !== "error" || !s.message) return;
+  if (!/not logged in|log in manually|loginnotconfigured/i.test(s.message)) return;
+  const banner = document.getElementById("loginBanner");
+  if (banner.style.display !== "none") return;  // don't stomp an already-visible banner
+  renderLoginStatus({status: "error", message: s.message});
 }
 
 function orderedColumns(columns) {
@@ -894,6 +1729,11 @@ function orderedColumns(columns) {
   return [...lead, ...priorityFirst, ...tail];
 }
 
+// Kept around so a click on the sorted column (see below) can look up that row's
+// full data for the detail popup, without a extra round-trip to the server.
+let lastResultsRows = [];
+let lastResultsColumns = [];
+
 function renderResults(data) {
   const thead = document.querySelector("#resultsTable thead");
   const tbody = document.querySelector("#resultsTable tbody");
@@ -901,11 +1741,535 @@ function renderResults(data) {
 
   const columns = orderedColumns(data.columns);
   const cls = c => PRIORITY_METRICS.includes(c) ? ' class="priority-col"' : "";
+  lastResultsRows = data.rows;
+  lastResultsColumns = columns;
 
   thead.innerHTML = "<tr>" + columns.map(c => `<th${cls(c)}>${c}</th>`).join("") + "</tr>";
-  tbody.innerHTML = data.rows.map(row =>
-    "<tr>" + columns.map(c => `<td${cls(c)}>${row[c] ?? ""}</td>`).join("") + "</tr>"
+  tbody.innerHTML = data.rows.map(row => {
+    const cells = columns.map(c => {
+      const value = row[c] ?? "";
+      // The currently-sorted column is what you're scanning down, so that's the
+      // value that opens the full-row detail popup - avoids hunting through a wide,
+      // horizontally-scrolling row (and a popup isn't disrupted by the table's own
+      // periodic auto-refresh, since it lives outside the table in the DOM). combo_id
+      // is always clickable too, regardless of sort, so a search result can always be
+      // opened straight to detail/launch.
+      const content = (c === activeSortBy || c === "combo_id")
+        ? `<a href="javascript:void(0)" onclick="openComboDetail('${row.combo_id}')">${escapeHtml(value)}</a>`
+        : escapeHtml(value);
+      return `<td${cls(c)}>${content}</td>`;
+    });
+    return "<tr>" + cells.join("") + "</tr>";
+  }).join("");
+}
+
+let currentComboId = null;
+
+function openComboDetail(comboId) {
+  const row = lastResultsRows.find(r => r.combo_id === comboId);
+  if (!row) return;
+  currentComboId = comboId;
+  document.getElementById("comboDetailBody").innerHTML = lastResultsColumns.map(c => `
+    <div class="detail-row">
+      <span class="detail-key">${escapeHtml(c)}</span>
+      <span class="detail-val">${escapeHtml(row[c] ?? "")}</span>
+    </div>
+  `).join("");
+  document.getElementById("launchComboStatus").textContent = "";
+  document.getElementById("launchComboBtn").style.display = "inline-block";
+  document.getElementById("launchSaveComboBtn").style.display = "inline-block";
+  document.getElementById("closeLaunchBtn").style.display = "none";
+  document.getElementById("launchComparisonBox").innerHTML = "";
+  document.getElementById("comboDetailModal").style.display = "flex";
+}
+
+function closeComboDetail() {
+  document.getElementById("comboDetailModal").style.display = "none";
+}
+
+// --- Launch a stored combo in a real, headed browser: fills every field, submits,
+// waits for the result, then applies the same post-result settings the real sweep
+// applies (brokerage, taxes, slippage, DTE filter) before scraping - and compares
+// the freshly-scraped metrics against what's stored in the CSV. Uses the primary
+// profile (same one login/relogin use); safe alongside a parallel sweep, but will
+// conflict with a running *sequential* one. ---
+let launchPollTimer = null;
+
+// "Launch & Save" names the strategy on AlgoTest's side as "{prefix}_{combo_id}_
+// {entry_time}" - the prefix is what makes many saved strategies belonging to
+// different portfolios identifiable side by side, instead of every save reading as
+// an anonymous combo_id. Remembered per-browser (localStorage) so building up one
+// portfolio across several saves doesn't mean retyping the same prefix every time -
+// returns null (meaning "cancelled, don't launch") if the user dismisses the prompt.
+const STRATEGY_PREFIX_STORAGE_KEY = "algotest_strategy_prefix";
+
+function promptStrategyPrefix() {
+  let lastUsed = "";
+  try {
+    lastUsed = localStorage.getItem(STRATEGY_PREFIX_STORAGE_KEY) || "";
+  } catch {
+    // localStorage can throw (private browsing, disabled site data) - fall back to
+    // no remembered default rather than blocking the launch over it.
+  }
+  const entered = prompt(
+    "Strategy name prefix - saved as \"prefix_comboid_starttime\".\n" +
+    "Leave as-is to reuse the last prefix, or clear it for no prefix.",
+    lastUsed,
+  );
+  if (entered === null) return null; // Cancel - caller aborts the launch entirely
+  const prefix = entered.trim();
+  try {
+    localStorage.setItem(STRATEGY_PREFIX_STORAGE_KEY, prefix);
+  } catch {
+    // Same as above - not being able to remember it isn't worth blocking the launch.
+  }
+  return prefix;
+}
+
+async function launchCombo(save = false) {
+  if (!currentComboId || !currentCsvPath) {
+    document.getElementById("launchComboStatus").textContent = "No active run's CSV to launch from.";
+    return;
+  }
+  let prefix = "";
+  if (save) {
+    prefix = promptStrategyPrefix();
+    if (prefix === null) return; // user cancelled the prefix prompt - don't launch at all
+  }
+  document.getElementById("launchComparisonBox").innerHTML = "";
+  const res = await fetch("/api/launch-combo", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({csv_paths: [currentCsvPath], combo_id: currentComboId, save, prefix}),
+  });
+  if (!res.ok) {
+    document.getElementById("launchComboStatus").textContent = "Error: " + await errorDetail(res);
+    return;
+  }
+  pollLaunchStatus();
+}
+
+async function pollLaunchStatus() {
+  const res = await fetch("/api/launch-combo/status");
+  renderLaunchStatus(await res.json());
+}
+
+const LAUNCH_STATUS_LABELS = {
+  opening: "Opening a browser window...",
+  filling: "Filling in the form and submitting...",
+  waiting_for_result: "Waiting for the backtest result...",
+  applying_settings: "Applying brokerage, taxes, slippage, and DTE filter...",
+  saving_strategy: "Saving strategy on AlgoTest...",
+};
+
+function renderLaunchStatus(s) {
+  const statusEl = document.getElementById("launchComboStatus");
+  const launchBtn = document.getElementById("launchComboBtn");
+  const launchSaveBtn = document.getElementById("launchSaveComboBtn");
+  const closeBtn = document.getElementById("closeLaunchBtn");
+  const inProgress = ["opening", "filling", "waiting_for_result", "applying_settings", "saving_strategy"].includes(s.status);
+
+  if (inProgress) {
+    statusEl.textContent = LAUNCH_STATUS_LABELS[s.status];
+    launchBtn.disabled = true;
+    launchSaveBtn.disabled = true;
+  } else if (s.status === "ready") {
+    const settings = s.settings_used;
+    const settingsNote = settings
+      ? ` (brokerage ₹${settings.brokerage_rate}, slippage ${settings.slippage_pct}%, DTE ${settings.dte_values.join(",") || "none"})`
+      : "";
+    const savedNote = s.saved_strategy_name ? ` Saved as "${s.saved_strategy_name}".` : "";
+    statusEl.textContent = "Done - see comparison below." + settingsNote + savedNote;
+    launchBtn.disabled = false;
+    launchSaveBtn.disabled = false;
+    closeBtn.style.display = "inline-block";
+    renderLaunchComparison(s.comparison);
+  } else if (s.status === "error") {
+    statusEl.textContent = "Error: " + (s.message || "launch failed");
+    launchBtn.disabled = false;
+    launchSaveBtn.disabled = false;
+    closeBtn.style.display = "none";
+  }
+
+  if (inProgress) {
+    if (!launchPollTimer) launchPollTimer = setInterval(pollLaunchStatus, 1500);
+  } else if (launchPollTimer) {
+    clearInterval(launchPollTimer);
+    launchPollTimer = null;
+  }
+}
+
+function renderLaunchComparison(comparison) {
+  const box = document.getElementById("launchComparisonBox");
+  if (!comparison || !comparison.length) {
+    box.innerHTML = "";
+    return;
+  }
+  const allMatch = comparison.every(c => c.match);
+  const rows = comparison.map(c => `
+    <tr>
+      <td>${escapeHtml(c.metric)}</td>
+      <td>${escapeHtml(c.stored ?? "")}</td>
+      <td>${escapeHtml(c.live ?? "")}</td>
+      <td style="color:${c.match ? "var(--ok)" : "var(--error)"}; font-weight:600;">${c.match ? "match" : "DIFFERS"}</td>
+    </tr>
+  `).join("");
+  box.innerHTML = `
+    <p style="font-size:12px;font-weight:600;margin:0 0 6px;color:${allMatch ? "var(--ok)" : "var(--error)"};">
+      ${allMatch ? "All metrics match the CSV." : "Some metrics differ from the CSV - see below."}
+    </p>
+    <table style="font-size:11px;"><thead><tr><th>Metric</th><th>Stored (CSV)</th><th>Live (just now)</th><th>Match?</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+}
+
+async function closeLaunchedBrowser() {
+  await fetch("/api/launch-combo/close", {method: "POST"});
+  document.getElementById("launchComboStatus").textContent = "";
+  document.getElementById("launchComboBtn").disabled = false;
+  document.getElementById("closeLaunchBtn").style.display = "none";
+}
+
+// --- Sort by: which metric column ranks the results table, default Return/MaxDD. ---
+const SORT_OPTION_LABELS = {
+  combined: "Best of Best (RMDD + Reward:Risk)",
+  return_max_dd: "Return/MaxDD",
+  reward_risk_ratio: "Reward/Risk Ratio",
+  expectancy: "Expectancy",
+  max_loss: "Max Loss",
+  max_profit: "Max Profit",
+  avg_profit_winning_trades: "Avg Profit (winning trades)",
+  avg_loss_per_trade: "Avg Loss per Trade",
+  win_rate: "Win Rate",
+  loss_rate: "Loss Rate",
+};
+let activeSortBy = "combined";
+
+function initSortBySelect() {
+  const select = document.getElementById("sortBySelect");
+  select.innerHTML = PRIORITY_METRICS.map(c =>
+    `<option value="${c}"${c === activeSortBy ? " selected" : ""}>${SORT_OPTION_LABELS[c] || c}</option>`
   ).join("");
+  updateCombinedWeightVisibility();
+}
+
+function updateCombinedWeightVisibility() {
+  const show = activeSortBy === "combined";
+  document.getElementById("combinedWeightField").style.display = show ? "" : "none";
+  document.getElementById("combinedWeightHelp").style.display = show ? "" : "none";
+}
+
+async function onSortByChange() {
+  activeSortBy = document.getElementById("sortBySelect").value;
+  updateCombinedWeightVisibility();
+  document.getElementById("resultsSortLabel").textContent =
+    `(sorted by ${SORT_OPTION_LABELS[activeSortBy] || activeSortBy}, highest first)`;
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+// --- Entry-time bucket filter: groups the accumulated "master collection" of
+// results by entry time (15/30/60-min slots anchored to market open) so you can
+// jump straight to a specific window's best results instead of scrolling. ---
+let activeTimeInterval = null;
+let activeTimeBucket = null;
+
+async function onTimeIntervalChange() {
+  const checked = document.querySelector('input[name="timeInterval"]:checked');
+  activeTimeInterval = checked ? parseInt(checked.value) : null;
+  activeTimeBucket = null;
+  document.getElementById("clearTimeFilterBtn").style.display = activeTimeInterval ? "inline-block" : "none";
+  if (activeTimeInterval) {
+    await refreshTimeBucketCounts();
+  } else {
+    document.getElementById("timeBucketRow").innerHTML = "";
+  }
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function refreshTimeBucketCounts() {
+  if (!activeTimeInterval) return;
+  const params = new URLSearchParams({interval: activeTimeInterval});
+  if (activeInstrument !== null) params.set("instrument", activeInstrument);
+  const base = activeResumeCsvPath ? "/api/analyze/time-buckets" : "/api/results/time-buckets";
+  if (activeResumeCsvPath) params.set("csv_file", activeResumeCsvPath);
+  const res = await fetch(`${base}?${params.toString()}`);
+  const data = await res.json();
+  renderTimeBuckets(data.buckets);
+}
+
+function renderTimeBuckets(buckets) {
+  const row = document.getElementById("timeBucketRow");
+  row.innerHTML = buckets.map(b => {
+    const active = b.label === activeTimeBucket;
+    const cls = b.count === 0 ? "secondary" : (active ? "primary" : "secondary");
+    const style = b.count === 0 ? "opacity:0.4;" : "";
+    return `<button class="${cls} small" style="${style}" onclick="selectTimeBucket('${b.label}')">${b.label} (${b.count})</button>`;
+  }).join("");
+}
+
+async function selectTimeBucket(label) {
+  activeTimeBucket = label;
+  await refreshTimeBucketCounts();  // re-render so the clicked button highlights
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearTimeFilter() {
+  document.querySelectorAll('input[name="timeInterval"]').forEach(r => r.checked = false);
+  activeTimeInterval = null;
+  activeTimeBucket = null;
+  document.getElementById("timeBucketRow").innerHTML = "";
+  document.getElementById("clearTimeFilterBtn").style.display = "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+// --- Manual entry-time range: an arbitrary from/to window, independent of the
+// fixed 15/30/60-min slot picker above - combines with it (and every other filter)
+// rather than replacing it. ---
+let activeEntryTimeFrom = null;
+let activeEntryTimeTo = null;
+
+async function applyEntryTimeFilter() {
+  activeEntryTimeFrom = document.getElementById("entryTimeFrom").value || null;
+  activeEntryTimeTo = document.getElementById("entryTimeTo").value || null;
+  document.getElementById("clearEntryTimeFilterBtn").style.display =
+    (activeEntryTimeFrom || activeEntryTimeTo) ? "inline-block" : "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+  // Exit time's own pill list is scoped by entry time too (see _exit_time_options) -
+  // without this, it kept showing exit times from OTHER sweeps entirely unrelated
+  // to whatever entry-time range is now selected.
+  await refreshExitTimeOptions();
+}
+
+async function clearEntryTimeFilter() {
+  document.getElementById("entryTimeFrom").value = "";
+  document.getElementById("entryTimeTo").value = "";
+  activeEntryTimeFrom = null;
+  activeEntryTimeTo = null;
+  document.getElementById("clearEntryTimeFilterBtn").style.display = "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+  await refreshExitTimeOptions();
+}
+
+// --- Manual exit-time range: an arbitrary from/to window, same convention as the
+// manual entry-time range above - combines with the exact-value exit-time pills
+// (and every other filter) rather than replacing them. ---
+let activeExitTimeFrom = null;
+let activeExitTimeTo = null;
+
+async function applyExitTimeRangeFilter() {
+  activeExitTimeFrom = document.getElementById("exitTimeFrom").value || null;
+  activeExitTimeTo = document.getElementById("exitTimeTo").value || null;
+  document.getElementById("clearExitTimeRangeFilterBtn").style.display =
+    (activeExitTimeFrom || activeExitTimeTo) ? "inline-block" : "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearExitTimeRangeFilter() {
+  document.getElementById("exitTimeFrom").value = "";
+  document.getElementById("exitTimeTo").value = "";
+  activeExitTimeFrom = null;
+  activeExitTimeTo = null;
+  document.getElementById("clearExitTimeRangeFilterBtn").style.display = "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+// --- combo_id search: a direct lookup, bypasses every other active filter server-
+// side (see _filtered_results) - finds a specific combo regardless of whatever
+// instrument/DTE/time filter happens to be on right now. ---
+let activeComboSearch = null;
+
+async function searchCombo() {
+  const needle = document.getElementById("comboSearchInput").value.trim();
+  activeComboSearch = needle || null;
+  document.getElementById("clearComboSearchBtn").style.display = activeComboSearch ? "inline-block" : "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearComboSearch() {
+  activeComboSearch = null;
+  document.getElementById("comboSearchInput").value = "";
+  document.getElementById("clearComboSearchBtn").style.display = "none";
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+function resultsUrl() {
+  const params = new URLSearchParams({sort_by: activeSortBy});
+  if (activeSortBy === "combined") {
+    const pct = parseFloat(document.getElementById("combinedWeightInput").value || "65");
+    params.set("rmdd_weight", (pct / 100).toString());
+  }
+  if (activeInstrument !== null) params.set("instrument", activeInstrument);
+  if (activeTimeInterval && activeTimeBucket) {
+    params.set("interval", activeTimeInterval);
+    params.set("bucket", activeTimeBucket);
+  }
+  if (activeDte !== null) params.set("dte", activeDte);
+  if (activeExitTime !== null) params.set("exit_time", activeExitTime);
+  if (activeComboSearch) params.set("combo_search", activeComboSearch);
+  if (activeEntryTimeFrom) params.set("entry_time_from", activeEntryTimeFrom);
+  if (activeEntryTimeTo) params.set("entry_time_to", activeEntryTimeTo);
+  if (activeExitTimeFrom) params.set("exit_time_from", activeExitTimeFrom);
+  if (activeExitTimeTo) params.set("exit_time_to", activeExitTimeTo);
+  // A loaded saved execution (activeResumeCsvPath) overrides whatever the live
+  // run_state's CSV is - without this, the grid (and Correlate, which reuses this
+  // same URL's query string) kept silently showing the last-active run's data even
+  // after loading a different execution.
+  if (activeResumeCsvPath) {
+    params.set("csv_file", activeResumeCsvPath);
+    return "/api/analyze/results?" + params.toString();
+  }
+  return "/api/results?" + params.toString();
+}
+
+// --- Instrument filter: one pill per index actually present in the CSV - the first
+// filter applied, so switching indices never blends e.g. NIFTY and BANKNIFTY rows
+// together in the same view. ---
+let activeInstrument = null;
+
+async function refreshInstrumentOptions() {
+  const base = activeResumeCsvPath ? "/api/analyze/instrument-options" : "/api/results/instrument-options";
+  const params = new URLSearchParams();
+  if (activeResumeCsvPath) params.set("csv_file", activeResumeCsvPath);
+  const res = await fetch(`${base}?${params.toString()}`);
+  const data = await res.json();
+  renderInstrumentOptions(data.options);
+}
+
+function renderInstrumentOptions(options) {
+  const row = document.getElementById("instrumentFilterRow");
+  if (!options.length) {
+    row.innerHTML = `<span style="font-size:12px;color:var(--muted);">No results yet.</span>`;
+    return;
+  }
+  row.innerHTML = options.map(o => {
+    const label = o.label === "" ? "unknown" : o.label;
+    const active = o.label === activeInstrument;
+    return `<button class="${active ? "primary" : "secondary"} small" onclick="selectInstrument('${o.label}')">${escapeHtml(label)} (${o.count})</button>`;
+  }).join("");
+}
+
+async function selectInstrument(label) {
+  activeInstrument = label;
+  document.getElementById("clearInstrumentFilterBtn").style.display = "inline-block";
+  await refreshInstrumentOptions();  // re-render so the clicked pill highlights
+  await refreshDteOptions();  // DTE/time-bucket counts are scoped to the instrument filter
+  await refreshExitTimeOptions();
+  if (activeTimeInterval) await refreshTimeBucketCounts();
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearInstrumentFilter() {
+  activeInstrument = null;
+  document.getElementById("clearInstrumentFilterBtn").style.display = "none";
+  await refreshInstrumentOptions();
+  await refreshDteOptions();
+  await refreshExitTimeOptions();
+  if (activeTimeInterval) await refreshTimeBucketCounts();
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+// --- DTE filter: one pill per exact DTE combination actually present in the CSV -
+// keeps results from a sweep run with a different DTE setting (e.g. testing DTE=1
+// after your existing DTE=0 data) from blending together in the same view. ---
+let activeDte = null;
+
+async function refreshDteOptions() {
+  const params = new URLSearchParams();
+  if (activeInstrument !== null) params.set("instrument", activeInstrument);
+  const base = activeResumeCsvPath ? "/api/analyze/dte-options" : "/api/results/dte-options";
+  if (activeResumeCsvPath) params.set("csv_file", activeResumeCsvPath);
+  const res = await fetch(`${base}?${params.toString()}`);
+  const data = await res.json();
+  renderDteOptions(data.options);
+}
+
+function renderDteOptions(options) {
+  const row = document.getElementById("dteFilterRow");
+  if (!options.length) {
+    row.innerHTML = `<span style="font-size:12px;color:var(--muted);">No results yet.</span>`;
+    return;
+  }
+  row.innerHTML = options.map(o => {
+    const label = o.label === "" ? "unknown" : o.label;
+    const active = o.label === activeDte;
+    return `<button class="${active ? "primary" : "secondary"} small" onclick="selectDte('${o.label}')">${escapeHtml(label)} (${o.count})</button>`;
+  }).join("");
+}
+
+async function selectDte(label) {
+  activeDte = label;
+  document.getElementById("clearDteFilterBtn").style.display = "inline-block";
+  await refreshDteOptions();  // re-render so the clicked pill highlights
+  await refreshExitTimeOptions();  // exit-time counts are scoped to instrument+DTE
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearDteFilter() {
+  activeDte = null;
+  document.getElementById("clearDteFilterBtn").style.display = "none";
+  await refreshDteOptions();
+  await refreshExitTimeOptions();
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+// --- Exit time filter: an exact-value pill picker (not a bucket grid) built from
+// whichever exit times the loaded CSV actually contains - see _exit_time_options.
+// Scoped by Instrument + DTE, same convention as DTE being scoped by Instrument. ---
+let activeExitTime = null;
+
+async function refreshExitTimeOptions() {
+  const params = new URLSearchParams();
+  if (activeInstrument !== null) params.set("instrument", activeInstrument);
+  if (activeDte !== null) params.set("dte", activeDte);
+  if (activeEntryTimeFrom) params.set("entry_time_from", activeEntryTimeFrom);
+  if (activeEntryTimeTo) params.set("entry_time_to", activeEntryTimeTo);
+  const base = activeResumeCsvPath ? "/api/analyze/exit-time-options" : "/api/results/exit-time-options";
+  if (activeResumeCsvPath) params.set("csv_file", activeResumeCsvPath);
+  const res = await fetch(`${base}?${params.toString()}`);
+  const data = await res.json();
+  renderExitTimeOptions(data.options);
+}
+
+function renderExitTimeOptions(options) {
+  const row = document.getElementById("exitTimeFilterRow");
+  if (!options.length) {
+    row.innerHTML = `<span style="font-size:12px;color:var(--muted);">No results yet.</span>`;
+    return;
+  }
+  row.innerHTML = options.map(o => {
+    const label = o.label === "" ? "unknown" : o.label;
+    const active = o.label === activeExitTime;
+    return `<button class="${active ? "primary" : "secondary"} small" onclick="selectExitTime('${o.label}')">${escapeHtml(label)} (${o.count})</button>`;
+  }).join("");
+}
+
+async function selectExitTime(label) {
+  activeExitTime = label;
+  document.getElementById("clearExitTimeFilterBtn").style.display = "inline-block";
+  await refreshExitTimeOptions();  // re-render so the clicked pill highlights
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
+}
+
+async function clearExitTimeFilter() {
+  activeExitTime = null;
+  document.getElementById("clearExitTimeFilterBtn").style.display = "none";
+  await refreshExitTimeOptions();
+  const res = await fetch(resultsUrl());
+  renderResults(await res.json());
 }
 
 async function pollOnce() {
@@ -913,8 +2277,14 @@ async function pollOnce() {
   const status = await statusRes.json();
   renderStatus(status);
 
-  const resultsRes = await fetch("/api/results");
+  const resultsRes = await fetch(resultsUrl());
   renderResults(await resultsRes.json());
+
+  if (activeTimeInterval) refreshTimeBucketCounts();
+  refreshDteOptions();
+  refreshExitTimeOptions();
+  refreshInstrumentOptions();
+  refreshPendingDuplicates();
 
   if (status.status !== "running" && pollTimer) {
     clearInterval(pollTimer);
@@ -928,8 +2298,133 @@ function startPolling() {
   pollTimer = setInterval(pollOnce, 1500);
 }
 
+// --- Strategies pending force-refresh (captured during a sweep instead of being
+// replayed under a brand new combo_id - see "Skip strategies already known under a
+// different date range" above). Independent of the main sweep's own run/stop state:
+// pollOnce() below refreshes this panel on the same cadence so it stays current
+// whether the sweep that found these is still running, stopping, or already done.
+let duplicateRefreshPollTimer = null;
+// Once a force-refresh has been dispatched from this panel, keep the card visible for
+// the rest of the page's life even after the queue empties out (dispatching clears it
+// server-side immediately, well before the job itself finishes) - otherwise the panel
+// would vanish out from under an in-progress job, taking its status/error line with it.
+// Mirrors analyze.html's own correlateStatus, which is likewise never hidden once used.
+let duplicateRefreshEverStarted = false;
+
+async function refreshPendingDuplicates() {
+  let data;
+  try {
+    data = await fetch("/api/duplicate-refresh/pending").then(r => r.json());
+  } catch {
+    return;
+  }
+  const card = document.getElementById("pendingDuplicatesCard");
+  const countEl = document.getElementById("pendingDuplicatesCount");
+  if (!data.count) {
+    if (!duplicateRefreshEverStarted) {
+      card.style.display = "none";
+      return;
+    }
+    countEl.textContent = "";
+    return;
+  }
+  card.style.display = "";
+  countEl.textContent = `${data.count.toLocaleString()} strateg${data.count === 1 ? "y" : "ies"} pending force-refresh.`;
+}
+
+async function startDuplicateRefresh() {
+  const btn = document.getElementById("startDuplicateRefreshBtn");
+  const statusEl = document.getElementById("duplicateRefreshStatus");
+  btn.disabled = true;
+  statusEl.style.color = "var(--muted)";
+  statusEl.textContent = "Starting...";
+  try {
+    const res = await fetch("/api/duplicate-refresh/start", {method: "POST"});
+    if (!res.ok) {
+      statusEl.style.color = "var(--error)";
+      statusEl.textContent = "Error: " + await errorDetail(res);
+      return;
+    }
+    const data = await res.json();
+    statusEl.style.color = "var(--muted)";
+    statusEl.textContent = `Started force re-download of ${data.queued.toLocaleString()} strateg${data.queued === 1 ? "y" : "ies"}...`;
+    duplicateRefreshEverStarted = true;
+    // The queue is cleared server-side as soon as the job is dispatched, not once it
+    // finishes - reflect that on the count line now rather than waiting for the next
+    // poll tick, but leave the card itself (and this status line) visible.
+    document.getElementById("pendingDuplicatesCount").textContent = "";
+    startDuplicateRefreshPolling();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function startDuplicateRefreshPolling() {
+  if (duplicateRefreshPollTimer) clearInterval(duplicateRefreshPollTimer);
+  pollDuplicateRefreshOnce();
+  duplicateRefreshPollTimer = setInterval(pollDuplicateRefreshOnce, 1500);
+}
+
+// Reuses the same background job/status endpoint as the Analyze page's own Force
+// re-download (src/web/correlate_state.py) - this panel just dispatches it against
+// the captured queue instead of a chosen top-N, so progress is read the same way.
+async function pollDuplicateRefreshOnce() {
+  const res = await fetch("/api/correlate/status");
+  const s = await res.json();
+  const statusEl = document.getElementById("duplicateRefreshStatus");
+  const active = s.status === "running" || s.status === "stopping";
+  if (s.status !== "idle") {
+    const pct = s.total > 0 ? Math.round(((s.downloaded + s.failed) / s.total) * 100) : 0;
+    statusEl.style.color = s.failed || s.status === "error" ? "var(--error)" : "var(--muted)";
+    statusEl.textContent = `${s.status} - ${s.downloaded + s.failed} / ${s.total} (${pct}%)`
+      + (s.failed ? `, ${s.failed} failed` : "")
+      + (s.message ? " - " + s.message : "");
+  }
+  if (!active && duplicateRefreshPollTimer) {
+    clearInterval(duplicateRefreshPollTimer);
+    duplicateRefreshPollTimer = null;
+    // Re-sync the pending count now that the job is done (a new duplicate could have
+    // been captured meanwhile) - the status line above is untouched by this, so a
+    // finished job's result (done or error) stays visible either way.
+    refreshPendingDuplicates();
+  }
+}
+
+// Labels these "Account N" slots with the actual AlgoTest login (email) each one
+// drives, instead of a number that means nothing without opening .env - falls back
+// to "Account N" wherever that slot's email isn't configured.
+async function loadAccountLabels() {
+  let accounts;
+  try {
+    accounts = await fetch("/api/accounts").then(r => r.json());
+  } catch {
+    return; // leave the "Account N" defaults in place
+  }
+  const slots = [
+    {key: "account1", n: 1, fieldId: "parallelism_label", btnId: "relogin_account1_btn"},
+    {key: "account2", n: 2, fieldId: "parallelism_account2_label", btnId: "relogin_account2_btn"},
+    {key: "account3", n: 3, fieldId: "parallelism_account3_label", btnId: "relogin_account3_btn"},
+  ];
+  slots.forEach(({key, n, fieldId, btnId}) => {
+    const login = accounts[key];
+    const label = login || `Account ${n}`;
+    const fieldEl = document.getElementById(fieldId);
+    if (fieldEl) fieldEl.textContent = `Parallel tabs (${label})`;
+    const btnEl = document.getElementById(btnId);
+    if (btnEl) btnEl.textContent = `Logout & re-login ${label}`;
+  });
+}
+
+initSortBySelect();
 loadConfig();
+loadExecutions();
+loadAccountLabels();
 pollOnce();
+pollLoginStatus();
+// After loadConfig()'s baseline, re-apply whichever execution was loaded before
+// the last refresh (if any) - see persistActiveExecutionName's own comment for
+// why this exists.
+restoreActiveExecutionFromStorage();
 </script>
 </body>
 </html>

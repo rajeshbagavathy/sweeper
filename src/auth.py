@@ -34,11 +34,11 @@ def ensure_logged_in(page: Page, selectors: Selectors, email: str | None, passwo
         return
 
     login = selectors.login
-    if not (login.email_input and login.password_input and login.submit_button):
+    if not (login.login_url and login.email_input and login.password_input and login.submit_button):
         raise LoginNotConfigured(
-            "Not logged in, and login.email_input/password_input/submit_button aren't "
-            "configured in config/selectors.yaml yet. Log in manually in a headed run, "
-            "or fill in those selectors."
+            "Not logged in, and login.login_url/email_input/password_input/submit_button "
+            "aren't configured in config/selectors.yaml yet. Log in manually in a headed "
+            "run, or fill in those selectors."
         )
     if not (email and password):
         raise LoginNotConfigured(
@@ -46,10 +46,19 @@ def ensure_logged_in(page: Page, selectors: Selectors, email: str | None, passwo
             "re-authenticate with."
         )
 
+    # Confirmed live: a logged-out session doesn't land on a login form by itself -
+    # the builder URL just redirects to the marketing homepage (with a
+    # ?redirect_to=... query param it never acts on automatically). Navigate to the
+    # actual login page directly rather than assuming the form is already present.
+    page.goto(login.login_url)
     resolve(page, login.email_input).fill(email)
     resolve(page, login.password_input).fill(password)
     resolve(page, login.submit_button).click()
     page.wait_for_load_state("networkidle")
 
+    # Login doesn't necessarily land back on the builder page (confirmed live: it can
+    # redirect elsewhere), and logged_in_marker is only confirmed to render on the
+    # builder page - go there explicitly before the final check.
+    page.goto(selectors.builder.url)
     if not is_logged_in(page, selectors):
         raise RuntimeError("Re-login attempt did not result in logged_in_marker becoming visible.")

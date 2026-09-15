@@ -3,6 +3,10 @@
 Local Python + Playwright tool that automates options-strategy backtesting on
 algotest.in through the visible UI, sweeps a parameter grid, and writes results to
 CSV. AlgoTest has no backtesting API, so this drives the rendered UI directly.
+A second page (Analyze Results) then works across any set of accumulated result
+CSVs: filtering/breakdown, uncorrelated-strategy basket building, multi-session
+portfolio construction, and CAS regime analysis. See `CLAUDE.md` for the fuller
+architecture/feature map and established conventions.
 
 ## Setup
 
@@ -22,12 +26,37 @@ uv run python webapp.py            # http://127.0.0.1:8765
 Set each parameter as a range (min/max/step, or a time range + interval), click
 **Preview combinations** to see the resulting grid size, then **Start** to run it -
 progress and results appear live in the page. Supports the ATM/OTM/ITM offset strike
-mode as well as the newer premium-range and closest-premium modes. Bound to
-`127.0.0.1` only; never expose this externally.
+mode as well as the newer premium-range and closest-premium modes, per-leg risk
+(target/Stop Loss on either a premium-% or Underlying-% basis/Trail SL/momentum
+entry/re-entry-on-SL including Lazy Leg), and overall Stop Loss/Target/Trailing.
+Bound to `127.0.0.1` only; never expose this externally.
 
 Your config is saved to `config/sweep_ui.yaml`. This is separate from
 `config/sweep.yaml` below - the CLI and the web UI don't share a config file, since the
 web UI's per-leg range sweeping doesn't map onto the CLI's simpler fixed-legs shape.
+
+### Analyze Results page (`/analyze.html`)
+
+Load any combination of past `results_web_*.csv` files (or `output/combo_registry.csv`)
+and work across them:
+
+- **Results table** - sort/filter (instrument, DTE, entry/exit time, backtest-date
+  range, combo search), coverage heatmaps, timing coverage, and per-parameter
+  performance breakdowns.
+- **Uncorrelated strategies** - download trade reports for the current top-N and
+  build a single correlation-filtered, diversified basket.
+- **Portfolio: multi-session capital reuse** - the same diversification, split
+  across four time-of-day buckets (short-morning/long-morning/midday/afternoon) and
+  lot-sized within a real per-bucket margin budget, modeling reusing the morning's
+  margin twice. Includes a parameter sweep (threshold/top_n/min_lots/max_lots grid)
+  and saved favorites.
+- **CAS regime analysis** - the same portfolio machinery scoped to a downloaded
+  CAS (post-cutoff) time window.
+- **Create CAS subset** - slice existing results to on/after a cutoff date
+  (default 2026-08-01), safe to re-run anytime without producing duplicates.
+
+Both pages support saving/resuming named executions and "Save basket in AlgoTest",
+which replays a chosen combo (or basket) back through the live AlgoTest UI.
 
 ## Option B: CLI
 
@@ -67,3 +96,8 @@ selector and update `config/selectors.yaml` by hand.
   announcer) but hasn't been checked against a genuine AlgoTest error yet.
 - `builder.reentry_count`/`reentry_type` are unexercised - not wired into the web UI or
   the default `sweep.yaml`.
+- `config/sweep_ui.yaml`'s saved Underlying % Stop Loss range (15-20) predates the
+  1% sanity cap and now silently contributes zero combos to any sweep - re-enter a
+  sane value (e.g. 0.14-0.25) through the UI.
+- See `CLAUDE.md`'s "Known stale/open items" for the rest (an old un-cleaned
+  DTE-combining data issue).

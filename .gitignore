@@ -1,7 +1,10 @@
 .env
 .browser-profile/
+.browser-profile-*/
+.browser-profiles/
 output/
 screenshots/
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
