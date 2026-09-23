@@ -7,11 +7,13 @@ import pytest
 
 from src.web.portfolio import (
     DEFAULT_BUDGETS,
+    VERY_LONG_MORNING_BUCKET_ORDER,
     _recompute_stats_for_window,
     _stale_picks,
     build_portfolio,
     charges_from_row,
     classify_bucket,
+    classify_very_long_morning_bucket,
     data_coverage_gaps,
     has_hard_stop_loss,
 )
@@ -62,6 +64,56 @@ def test_classify_bucket_ambiguous_gap_is_none():
     # entry before 11:00 but exit lands in the dead zone between the two morning
     # buckets - neither a short quick exit nor a held-to-early-afternoon exit.
     assert classify_bucket(_row("a", "09:20", "12:00")) is None
+
+
+# --- "Very long morning" - the opt-in 2-bucket scheme covering exactly the gap
+# classify_bucket's own regular 4-way split leaves uncovered: an 11:00am-11:59am
+# entry held into the afternoon lands in neither long_morning (entry must be
+# before 11:00) nor midday (exit must be <= 14:15) - see
+# classify_very_long_morning_bucket's own docstring for the real-data numbers
+# that surfaced this. ---
+
+
+def test_classify_very_long_morning_covers_entry_before_11am():
+    # The clearest case classify_bucket's long_morning already handles too -
+    # confirms the new bucket doesn't regress it.
+    assert classify_very_long_morning_bucket(_row("a", "09:17", "14:30")) == "very_long_morning"
+
+
+def test_classify_very_long_morning_covers_the_11am_to_noon_gap():
+    # Exactly the combination classify_bucket has no bucket for at all (entry
+    # in 11:00-11:59am, exit past 14:15) - the whole point of this scheme.
+    assert classify_very_long_morning_bucket(_row("a", "11:30", "14:45")) == "very_long_morning"
+    assert classify_bucket(_row("a", "11:30", "14:45")) is None
+
+
+def test_classify_very_long_morning_covers_11am_entry_with_an_early_exit_too():
+    # Same gap, the other sub-case: classify_bucket puts this in "midday"
+    # (exit <= 14:15) instead of long_morning - still covered here as one
+    # combined session regardless.
+    assert classify_very_long_morning_bucket(_row("a", "11:30", "14:10")) == "very_long_morning"
+    assert classify_bucket(_row("a", "11:30", "14:10")) == "midday"
+
+
+def test_classify_very_long_morning_excludes_entry_before_2pm_exit():
+    # Entry before noon but NOT held into the afternoon - not what this bucket
+    # is for, same "doesn't cleanly fit" convention as classify_bucket's None.
+    assert classify_very_long_morning_bucket(_row("a", "09:20", "11:00")) is None
+
+
+def test_classify_very_long_morning_excludes_the_noon_to_1pm_slot():
+    assert classify_very_long_morning_bucket(_row("a", "12:30", "14:30")) is None
+
+
+def test_classify_very_long_morning_afternoon_matches_regular_scheme():
+    # Same cutoff (entry >= 13:00) as classify_bucket's own afternoon - this
+    # bucket behaves identically in either scheme.
+    assert classify_very_long_morning_bucket(_row("a", "14:10", "15:25")) == "afternoon"
+    assert classify_bucket(_row("a", "14:10", "15:25")) == "afternoon"
+
+
+def test_very_long_morning_bucket_order_is_just_the_two_buckets():
+    assert VERY_LONG_MORNING_BUCKET_ORDER == ["very_long_morning", "afternoon"]
 
 
 def test_has_hard_stop_loss_true_for_leg_level_percentage():
@@ -184,6 +236,37 @@ def _write_distinct_report(base_dir: Path, combo_id: str, offset_months: int) ->
         base_dir / "nifty" / f"{combo_id}.csv",
         [(str(n), f"2025-{offset_months:02d}-{n+1:02d}", "100") for n in range(6)],
     )
+
+
+def test_build_portfolio_same_window_dedupes_when_correlation_is_unknown(tmp_path):
+    """Confirmed live: a short backtest window (few trading days) leaves
+    correlation "unknown" (None) for almost every pair, since real correlation
+    needs at least MIN_OVERLAP_DAYS overlapping dates - and "unknown" alone
+    never blocks inclusion, so the SAME entry/exit clock-time window kept
+    getting picked repeatedly into one bucket even though the picks weren't
+    provably correlated. Two afternoon combos sharing the exact same (entry,
+    exit) but with too few overlapping days for a real coefficient - only the
+    better-ranked one should survive into the basket now."""
+    rows = [
+        _row("af1", "14:55", "15:38", rmdd="50", pnl="27868", maxdd="-93"),
+        _row("af2", "14:55", "15:38", rmdd="40", pnl="23220", maxdd="-93"),
+    ]
+    # Only 4 overlapping days - one short of MIN_OVERLAP_DAYS (5) - with
+    # genuinely different daily P&L (not byte-identical), so this exercises
+    # the same_window tie-break specifically, not the exact-duplicate check.
+    _write_report(tmp_path / "sensex" / "af1.csv", [
+        ("0", "2026-08-26", "7969"), ("1", "2026-09-02", "4932"),
+        ("2", "2026-09-09", "11368"), ("3", "2026-09-16", "234"),
+    ])
+    _write_report(tmp_path / "sensex" / "af2.csv", [
+        ("0", "2026-08-26", "8171"), ("1", "2026-09-02", "4932"),
+        ("2", "2026-09-09", "11166"), ("3", "2026-09-16", "234"),
+    ])
+
+    result = build_portfolio(rows, tmp_path, "SENSEX", threshold=0.5, top_n=5, max_share=1.0)
+
+    members = result["buckets"]["afternoon"]["members"]
+    assert [m["combo_id"] for m in members] == ["af1"]  # af2 correctly excluded
 
 
 def test_build_portfolio_sizes_each_bucket_to_its_exact_budget(tmp_path):
@@ -346,6 +429,33 @@ def test_build_portfolio_with_custom_bucket_order_diversifies_per_custom_bucket(
     assert result["dropped_for_timing"] == 0
 
 
+def test_build_portfolio_very_long_morning_mode_end_to_end(tmp_path):
+    """The actual feature, not just the classify function in isolation - an
+    11am entry held into the afternoon (no bucket in the regular scheme) lands
+    in "very_long_morning" here, and the regular short_morning/long_morning/
+    midday margin-reuse timing filter (specific to those bucket names) simply
+    doesn't apply, same as any other custom bucket_order."""
+    rows = [
+        _row("a", "11:30", "14:45", rmdd="10", pnl="2000", maxdd="-1000"),
+        _row("b", "14:10", "15:25", rmdd="10", pnl="2000", maxdd="-1000"),
+    ]
+    for i, r in enumerate(rows):
+        _write_distinct_report(tmp_path, r["combo_id"], offset_months=i + 1)
+
+    result = build_portfolio(
+        rows, tmp_path, "NIFTY", threshold=0.5, top_n=5, max_share=1.0,
+        bucket_order=VERY_LONG_MORNING_BUCKET_ORDER,
+        budgets={"very_long_morning": 27.0, "afternoon": 45.0},
+        classify_fn=classify_very_long_morning_bucket,
+    )
+
+    assert set(result["buckets"]) == {"very_long_morning", "afternoon"}
+    assert [m["combo_id"] for m in result["buckets"]["very_long_morning"]["members"]] == ["a"]
+    assert [m["combo_id"] for m in result["buckets"]["afternoon"]["members"]] == ["b"]
+    assert result["buckets"]["very_long_morning"]["budget"] == 27.0
+    assert result["dropped_for_timing"] == 0
+
+
 def _cas_style_rows(n: int) -> list[dict]:
     """n uncorrelated single-pick "slices" (equal max_drawdown, so _size_lots'
     inverse-drawdown weighting splits any shared budget between them equally) -
@@ -415,8 +525,14 @@ def test_build_portfolio_overall_budget_bounds_each_pick_separately_within_a_sli
     each pick draws its own independent min/max-bounded share from the shared
     pool, rather than the whole slice being capped as one unit."""
     rows = [
+        # slice_a_1/slice_a_2 deliberately differ in EXIT time (classify() below
+        # only keys off entry_time, so both still land in "slice_a") - same
+        # entry+exit would now trip the same_window dedup tie-break (see
+        # src/correlate.py's pick_diversified_basket), which isn't what this
+        # test is about; it's testing budget-splitting across multiple GENUINE
+        # picks in one slice, not deduplication.
         _row("slice_a_1", "15:14", "15:29", rmdd="10", pnl="2000", maxdd="-1000"),
-        _row("slice_a_2", "15:14", "15:29", rmdd="9", pnl="1900", maxdd="-1000"),
+        _row("slice_a_2", "15:14", "15:32", rmdd="9", pnl="1900", maxdd="-1000"),
         _row("slice_b_1", "15:20", "15:29", rmdd="10", pnl="2000", maxdd="-1000"),
     ]
     for i, r in enumerate(rows):

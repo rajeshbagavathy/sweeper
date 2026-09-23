@@ -2,14 +2,14 @@ instrument: SENSEX
 start_date: '2025-01-01'
 end_date: '2026-09-09'
 entry_time:
-  start: 09:17
-  end: '10:00'
-  interval_minutes: 5
+  start: '11:00'
+  end: '12:00'
+  interval_minutes: 10
   fixed: false
 exit_time:
-  start: '13:15'
+  start: '14:30'
   end: '15:00'
-  interval_minutes: 30
+  interval_minutes: 15
   fixed: false
 linked_ce_pe: true
 shared_leg:
@@ -22,13 +22,14 @@ shared_leg:
   strike:
     use_offset: true
     offsets:
+    - ITM1
     - ATM
     - OTM1
     use_closest_premium: true
     premium_range:
-      min: 50.0
-      max: 120.0
-      step: 20.0
+      min: 100.0
+      max: 150.0
+      step: 25.0
 legs:
 - action: SELL
   option_type: CE
@@ -68,13 +69,13 @@ leg_risk:
     step: 10.0
   stoploss_enabled: true
   stoploss_pct:
-    min: 15.0
-    max: 30.0
-    step: 5.0
+    min: 30.0
+    max: 80.0
+    step: 15.0
   stoploss_underlying_enabled: true
   stoploss_underlying_pct:
-    min: 0.2
-    max: 0.3
+    min: 0.15
+    max: 0.2
     step: 0.05
   trail_points_enabled: true
   trail_points_x:
@@ -162,8 +163,8 @@ auto_download_min_return_max_dd: 1.5
 auto_download_min_trades: 0
 capture_dte_individually: true
 skip_known_duplicate_strategies: true
-parallelism: 4
-parallelism_account2: 4
+parallelism: 5
+parallelism_account2: 5
 parallelism_account3: 0
 delay: 2.0
 headless: true

@@ -90,6 +90,44 @@ def test_correlation_matrix_no_overlap_at_all_is_none():
     assert matrix["a"]["b"] is None
 
 
+def test_correlation_matrix_identical_series_below_min_overlap_is_treated_as_correlated():
+    # Confirmed live: a short backtest window (few trading days) routinely
+    # produces near-duplicate combos - same entry/exit, identical P&L to the
+    # rupee, because whatever parameter differs between them never actually
+    # fires against that window's price action. With only 2 overlapping days
+    # (below MIN_OVERLAP_DAYS), a plain correlation coefficient can't be
+    # computed - but two BYTE-IDENTICAL series aren't "unknown", they're
+    # definitely the same strategy, and must be excluded rather than let
+    # through as "insufficient data to know".
+    series = {
+        "a": {"d1": 1.0, "d2": 2.0},
+        "b": {"d1": 1.0, "d2": 2.0},
+    }
+    matrix = correlation_matrix(series, min_overlap=5)
+    assert matrix["a"]["b"] == 1.0
+    assert matrix["b"]["a"] == 1.0
+
+
+def test_correlation_matrix_below_min_overlap_but_not_identical_is_still_none():
+    # Same tiny overlap as above, but the values genuinely differ - must stay
+    # "unknown", not be misread as identical just because it's a small pair.
+    series = {
+        "a": {"d1": 1.0, "d2": 2.0},
+        "b": {"d1": 1.0, "d2": 2.5},
+    }
+    matrix = correlation_matrix(series, min_overlap=5)
+    assert matrix["a"]["b"] is None
+
+
+def test_correlation_matrix_two_empty_series_is_not_treated_as_identical():
+    # Both candidates have zero trades in this window - genuinely unknown
+    # whether they're the same strategy, not "identical" just because two
+    # empty dicts compare equal.
+    series = {"a": {}, "b": {}}
+    matrix = correlation_matrix(series)
+    assert matrix["a"]["b"] is None
+
+
 def test_pick_diversified_basket_skips_a_highly_correlated_higher_scorer():
     # "a" ranks best but is a near-clone of "b" (already picked) - should be skipped
     # in favor of "c", which ranks lower but is genuinely uncorrelated.
@@ -113,6 +151,52 @@ def test_pick_diversified_basket_unknown_correlation_never_blocks_inclusion():
     assert [b["combo_id"] for b in basket] == ["a", "b"]
     assert skipped == []
     assert basket[1]["max_corr_to_basket"] is None
+
+
+def test_pick_diversified_basket_same_window_excludes_unknown_correlation_pair():
+    # Confirmed live: a short backtest window leaves correlation "unknown" for
+    # almost every pair in a narrow-session bucket, letting the exact same
+    # entry/exit clock-time window get picked repeatedly even though no pair
+    # is individually PROVEN correlated. same_window() is the tie-break for
+    # exactly this: "b" shares a's own (entry, exit) and correlation to it is
+    # unknown (None) - must be treated as maximally correlated, not "unknown
+    # so keep it".
+    matrix = {"a": {"a": 1.0, "b": None}, "b": {"a": None, "b": 1.0}}
+    basket, skipped = pick_diversified_basket(
+        ["a", "b"], matrix, threshold=0.5, same_window=lambda x, y: True,
+    )
+    assert [b["combo_id"] for b in basket] == ["a"]
+    assert skipped == [{"combo_id": "b", "reason": "correlation 1.00 with a"}]
+
+
+def test_pick_diversified_basket_same_window_does_not_override_a_real_correlation():
+    # A genuinely LOW correlation (proven, not unknown) must still win even if
+    # same_window would say True - same_window only ever fills in for unknown
+    # (None), never overrides an actual computed number.
+    matrix = {"a": {"a": 1.0, "b": 0.1}, "b": {"a": 0.1, "b": 1.0}}
+    basket, skipped = pick_diversified_basket(
+        ["a", "b"], matrix, threshold=0.5, same_window=lambda x, y: True,
+    )
+    assert [b["combo_id"] for b in basket] == ["a", "b"]
+    assert skipped == []
+
+
+def test_pick_diversified_basket_same_window_false_leaves_unknown_pair_included():
+    # Different windows, still unknown correlation - unchanged "keep it"
+    # behavior, same_window is only a tie-break when it actually applies.
+    matrix = {"a": {"a": 1.0, "b": None}, "b": {"a": None, "b": 1.0}}
+    basket, skipped = pick_diversified_basket(
+        ["a", "b"], matrix, threshold=0.5, same_window=lambda x, y: False,
+    )
+    assert [b["combo_id"] for b in basket] == ["a", "b"]
+    assert skipped == []
+
+
+def test_pick_diversified_basket_same_window_unset_matches_old_behavior():
+    matrix = {"a": {"a": 1.0, "b": None}, "b": {"a": None, "b": 1.0}}
+    basket, skipped = pick_diversified_basket(["a", "b"], matrix, threshold=0.5)
+    assert [b["combo_id"] for b in basket] == ["a", "b"]
+    assert skipped == []
 
 
 def test_compute_portfolio_metrics_sums_daily_pl_across_the_basket_first():

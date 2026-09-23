@@ -146,19 +146,23 @@ def test_leg_risk_stoploss_basis_union_not_cross_product():
             stoploss_pct=NumericRange(min=20, max=20, step=10),
             stoploss_underlying_enabled=True,
             stoploss_underlying_pct=NumericRange(min=0.1, max=0.2, step=0.1),  # 0.1, 0.2
-        )
+        ),
+        # Underlying-basis leg SL now requires a real overall Stop Loss too (see
+        # test_leg_risk_underlying_stoploss_requires_overall_stoploss) - enabled
+        # here purely so this test can still exercise the union-not-cross-product
+        # behavior on the underlying basis, which is what it's actually testing.
+        overall_stoploss=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=50, max=50)),
     )
     combos = expand_ui_config(cfg)
     stoplosses = [c["leg_risk"]["stoploss_pct"] for c in combos]
     non_none = [s for s in stoplosses if s is not None]
-    # 1 percentage combo (20) + 2 underlying_percentage combos (0.1, 0.2) = 3, unioned.
-    # No None baseline here: overall Stop Loss is never enabled in this config, so
-    # a leg-level None would mean no hard Stop Loss at all - excluded outright.
-    assert len(non_none) == 3
-    assert {s["kind"] for s in non_none} == {"percentage", "underlying_percentage"}
-    assert {s["value"] for s in non_none if s["kind"] == "percentage"} == {20}
-    assert {s["value"] for s in non_none if s["kind"] == "underlying_percentage"} == {0.1, 0.2}
-    assert None not in stoplosses
+    # percentage (20) + 2 underlying_percentage values (0.1, 0.2), unioned rather
+    # than crossed - distinct (kind, value) pairs is what's under test here, not
+    # a raw count (percentage also varies against overall_stoploss's own [None,
+    # 50] choices, so its combo count isn't 1:1 with its distinct SL values).
+    assert {(s["kind"], s["value"]) for s in non_none} == {
+        ("percentage", 20), ("underlying_percentage", 0.1), ("underlying_percentage", 0.2),
+    }
 
 
 def test_leg_risk_underlying_stoploss_above_one_percent_silently_excluded():
@@ -190,12 +194,78 @@ def test_leg_risk_underlying_stoploss_partial_range_keeps_only_sane_values():
         leg_risk=LegRiskConfig(
             stoploss_underlying_enabled=True,
             stoploss_underlying_pct=NumericRange(min=0.5, max=1.5, step=0.5),  # 0.5, 1.0, 1.5 - last one insane
-        )
+        ),
+        overall_stoploss=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=50, max=50)),
     )
     combos = expand_ui_config(cfg)
     stoplosses = [c["leg_risk"]["stoploss_pct"] for c in combos]
     non_none = [s for s in stoplosses if s is not None]
     assert {s["value"] for s in non_none} == {0.5, 1.0}
+
+
+def test_leg_risk_underlying_stoploss_requires_overall_stoploss():
+    # Per explicit instruction: an underlying-basis leg SL triggers off the
+    # underlying's own price move, not the strategy's actual loss - on its own
+    # (no overall Stop Loss backing it up) nothing caps the real loss, so it's
+    # only ever generated alongside a real overall Stop Loss.
+    cfg = _base_cfg(
+        leg_risk=LegRiskConfig(stoploss_underlying_enabled=True, stoploss_underlying_pct=NumericRange(min=0.2, max=0.2)),
+        overall_stoploss=OverallRiskConfig(use_percentage=False, use_amount=False),
+    )
+    combos = expand_ui_config(cfg)
+    stoplosses = [c["leg_risk"]["stoploss_pct"] for c in combos]
+    assert not any(s is not None and s["kind"] == "underlying_percentage" for s in stoplosses)
+
+
+def test_leg_risk_underlying_stoploss_kept_when_overall_stoploss_also_enabled():
+    cfg = _base_cfg(
+        leg_risk=LegRiskConfig(stoploss_underlying_enabled=True, stoploss_underlying_pct=NumericRange(min=0.2, max=0.2)),
+        overall_stoploss=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=20, max=20)),
+    )
+    combos = expand_ui_config(cfg)
+    stoplosses = [c["leg_risk"]["stoploss_pct"] for c in combos]
+    assert any(s is not None and s["kind"] == "underlying_percentage" for s in stoplosses)
+
+
+def test_leg_risk_underlying_stoploss_excludes_momentum_combination():
+    # Per explicit instruction: AlgoTest's Simple Momentum entry criteria (delay
+    # entry until the underlying has moved a given %) doesn't make sense paired
+    # with an underlying-basis leg SL, which triggers off that same kind of move
+    # from the opposite direction - never generated together.
+    cfg = _base_cfg(
+        leg_risk=LegRiskConfig(
+            stoploss_underlying_enabled=True,
+            stoploss_underlying_pct=NumericRange(min=0.2, max=0.2),
+            momentum_up_enabled=True,
+            momentum_up_pct=NumericRange(min=5, max=5),
+        ),
+        overall_stoploss=OverallRiskConfig(use_percentage=True, percentage_range=NumericRange(min=20, max=20)),
+    )
+    combos = expand_ui_config(cfg)
+    for c in combos:
+        sl = c["leg_risk"]["stoploss_pct"]
+        if sl is not None and sl["kind"] == "underlying_percentage":
+            assert c["leg_risk"]["momentum"] is None
+
+
+def test_leg_risk_percentage_stoploss_unaffected_by_momentum_exclusion():
+    # The new exclude is scoped to the underlying basis only - a premium-%
+    # leg SL alongside momentum is untouched, still a normal combination.
+    cfg = _base_cfg(
+        leg_risk=LegRiskConfig(
+            stoploss_enabled=True,
+            stoploss_pct=NumericRange(min=20, max=20),
+            momentum_up_enabled=True,
+            momentum_up_pct=NumericRange(min=5, max=5),
+        )
+    )
+    combos = expand_ui_config(cfg)
+    assert any(
+        c["leg_risk"]["stoploss_pct"] is not None
+        and c["leg_risk"]["stoploss_pct"]["kind"] == "percentage"
+        and c["leg_risk"]["momentum"] is not None
+        for c in combos
+    )
 
 
 def test_leg_risk_disabled_dimensions_are_none():
@@ -677,6 +747,49 @@ def test_probe_combos_covers_lazy_leg_fieldnames_too():
     full_fields = set(build_fieldnames(full, metric_names=[]))
     probe_fields = set(build_fieldnames(probes, metric_names=[]))
     assert any(f.startswith("legs.0.lazy_leg.") for f in full_fields)  # sanity: the config really does produce this shape
+    assert probe_fields == full_fields
+
+
+def test_probe_combos_covers_lazy_leg_strike_shape_for_premium_closest_legs():
+    """The narrower gap inside the lazy-leg combined probe itself: a leg whose
+    OWN strike offers BOTH offset ("OTM2", a plain string once derived) and
+    premium-closest ({"mode","value"}, a dict once derived) choices needs a
+    lazy_leg.strike column set discovered for BOTH shapes, not just whichever
+    one happens to be that dimension's own first/baseline value. Confirmed
+    live: a real sweep whose legs used premium-closest strikes broke "Download
+    Reports" replay for every affected row - Playwright timing out trying to
+    select a blank strike in AlgoTest's "Create New Lazy Leg" popup, because
+    the {"mode","value"}-shaped columns were never in the header at all and
+    every such row's lazy strike was silently dropped on write."""
+    cfg = _base_cfg(
+        legs=[
+            LegUIConfig(
+                action="SELL", option_type="CE",
+                strike=StrikeConfig(
+                    use_offset=True, offsets=["ATM"],
+                    use_closest_premium=True, premium_range=NumericRange(min=50, max=50),
+                ),
+            ),
+            LegUIConfig(action="SELL", option_type="PE", strike=StrikeConfig(use_offset=True, offsets=["ATM"])),
+        ],
+        leg_risk=LegRiskConfig(
+            reentry_sl_enabled=True,
+            reentry_sl_types=["LAZY_LEG"],
+            stoploss_enabled=True,
+            stoploss_pct=NumericRange(min=30, max=30, step=10),
+        ),
+        overall_stoploss=OverallRiskConfig(use_amount=True),
+    )
+
+    full = expand_ui_config(cfg)
+    probes = probe_combos(cfg)
+
+    full_fields = set(build_fieldnames(full, metric_names=[]))
+    probe_fields = set(build_fieldnames(probes, metric_names=[]))
+    # Sanity: the full expansion really does produce both shapes for leg 0.
+    assert "legs.0.lazy_leg.strike" in full_fields
+    assert "legs.0.lazy_leg.strike.mode" in full_fields
+    assert "legs.0.lazy_leg.strike.value" in full_fields
     assert probe_fields == full_fields
 
 

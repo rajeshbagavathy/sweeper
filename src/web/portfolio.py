@@ -58,6 +58,9 @@ from src.web.models import MAX_SANE_UNDERLYING_SL_PCT
 from src.web.narrow import combined_sort_key, profitability_gated_key
 
 BUCKET_ORDER = ["short_morning", "long_morning", "midday", "afternoon"]
+# An alternate, opt-in 2-bucket scheme - see classify_very_long_morning_bucket
+# below for what it actually covers and why it exists.
+VERY_LONG_MORNING_BUCKET_ORDER = ["very_long_morning", "afternoon"]
 DEFAULT_BUDGETS: dict[str, float] = {
     "short_morning": 18.0,
     "long_morning": 27.0,
@@ -140,6 +143,39 @@ def classify_bucket(row: dict[str, Any]) -> str | None:
         return None
     if "11:00" <= entry < "13:00" and exit_ <= "14:15":
         return "midday"
+    if entry >= "13:00":
+        return "afternoon"
+    return None
+
+
+def classify_very_long_morning_bucket(row: dict[str, Any]) -> str | None:
+    """Pairs with VERY_LONG_MORNING_BUCKET_ORDER - an opt-in alternative to
+    classify_bucket's own 4-way split, for analyzing "entered anytime before
+    noon, held into the afternoon" as ONE combined session instead of getting
+    split (or silently dropped) across short_morning/long_morning/midday's own
+    narrower cutoffs.
+
+    Confirmed live this was a real gap: classify_bucket's long_morning only
+    ever matches an entry BEFORE 11:00am - an 11:00-11:59am entry held to a
+    2-3pm exit doesn't land there at all. It either gets misclassified as
+    "midday" (if exit <= 14:15, silently dropped if that bucket's budget is
+    zeroed out to isolate long_morning) or excluded entirely (exit > 14:15
+    matches neither midday nor any other bucket). Checked against real data:
+    of ~55,600 rows entered 09:17am-12pm and exited 2-3pm, ~21% were silently
+    unrepresented in long_morning for exactly this reason.
+
+    entry before noon AND exit at/after 2pm -> one combined "very long
+    morning" bucket; entry at/after 1pm -> afternoon, same cutoff as
+    classify_bucket's own afternoon (so afternoon behaves identically in
+    either scheme). Anything else (e.g. entry in the 11am-1pm gap that either
+    isn't held to at least 2pm, or an entry in the narrow 12-1pm slot itself)
+    doesn't cleanly fit either bucket and is excluded - same "doesn't fit"
+    convention as classify_bucket's own None case, not a bug."""
+    entry, exit_ = row.get("entry_time") or "", row.get("exit_time") or ""
+    if not entry or not exit_:
+        return None
+    if entry < "12:00" and exit_ >= "14:00":
+        return "very_long_morning"
     if entry >= "13:00":
         return "afternoon"
     return None
@@ -305,7 +341,12 @@ def _diversify_merged_pool(
     row_by_id = {r["combo_id"]: r for r in shortlisted}
     score_key = combined_sort_key(shortlisted)
     ranked_ids = sorted(row_by_id, key=lambda cid: score_key(row_by_id[cid]), reverse=True)
-    basket, _skipped = pick_diversified_basket(ranked_ids, matrix, threshold=threshold)
+
+    def same_window(a: str, b: str) -> bool:
+        ra, rb = row_by_id[a], row_by_id[b]
+        return (ra.get("entry_time"), ra.get("exit_time")) == (rb.get("entry_time"), rb.get("exit_time"))
+
+    basket, _skipped = pick_diversified_basket(ranked_ids, matrix, threshold=threshold, same_window=same_window)
     return basket, row_by_id, series
 
 

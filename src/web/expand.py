@@ -257,6 +257,29 @@ def to_sweep_config(cfg: SweepUIConfig) -> SweepConfig:
     ):
         exclude.append(f"{_LEGRISK_PREFIX}stoploss_pct is None and overall_stoploss is None")
 
+    # Underlying % leg Stop Loss triggers off a move in the UNDERLYING's own price,
+    # not the strategy's own P&L - on its own (no overall Stop Loss backing it up)
+    # there's nothing capping the strategy's actual loss, only a leg-level SL that
+    # may never trip even while the position bleeds. Per explicit instruction: an
+    # underlying-basis leg SL is only ever generated alongside a real overall Stop
+    # Loss, never standalone. Independent of MAX_SANE_UNDERLYING_SL_PCT above - this
+    # applies to every underlying-basis value, not just an insane one.
+    exclude.append(
+        f"{_LEGRISK_PREFIX}stoploss_pct is not None "
+        f"and {_LEGRISK_PREFIX}stoploss_pct['kind'] == 'underlying_percentage' "
+        "and overall_stoploss is None"
+    )
+    # AlgoTest's "Simple Momentum" entry criteria delays entering a leg until the
+    # underlying has already moved a given % - combined with an underlying-basis SL
+    # (which triggers off that SAME underlying move, just measured from the SL's own
+    # reference price instead), the two chase the same signal from opposite ends and
+    # don't compose meaningfully. Per explicit instruction: never generated together.
+    exclude.append(
+        f"{_LEGRISK_PREFIX}stoploss_pct is not None "
+        f"and {_LEGRISK_PREFIX}stoploss_pct['kind'] == 'underlying_percentage' "
+        f"and {_LEGRISK_PREFIX}momentum is not None"
+    )
+
     if cfg.trail_sl_enabled:
         # step ("for every increase in profit by") must be >= trail_by ("trail profit
         # by") - the same X >= Y trailing constraint as the leg-level Trail SL above.
@@ -377,7 +400,24 @@ def probe_combos(cfg: SweepUIConfig) -> list[dict[str, Any]]:
     this path - confirmed live: a real sweep's own CSV silently dropped every
     such column on every resume, for every row, because of exactly this. One
     extra, deliberately combined probe (added only when the config can
-    actually produce this shape) closes the gap."""
+    actually produce this shape) closes the gap.
+
+    A SECOND, narrower gap sits inside that same combined probe: derive_lazy_
+    leg's own "strike" output is a plain offset STRING when the leg's own
+    strike landed on offset mode, but a {"mode","value"} premium-closest DICT
+    when it landed on that mode instead - two different flattened column
+    shapes ("legs.N.lazy_leg.strike" vs "legs.N.lazy_leg.strike.mode"/".value"),
+    a THIRD key (that same leg's own strike choice) combined with the two
+    above. The one combined probe leaves every other key at ITS OWN baseline
+    (first) value, so it only ever exercises whichever shape that leg's
+    strike vary list happens to list first - if the list also includes the
+    OTHER shape, that shape's columns are never discovered, and every row
+    that lands on it later silently drops its lazy strike on write (append_
+    row's extrasaction="ignore"). Confirmed live: exactly this - a sweep whose
+    legs used premium-closest strikes - broke "Download Reports" replay for
+    every affected DTE-2 row (Playwright timing out trying to select a blank
+    strike in the "Create New Lazy Leg" popup). One extra probe per leg whose
+    strike vary list offers both shapes closes this gap too."""
     sweep = to_sweep_config(cfg)
     keys = list(sweep.vary.keys())
     value_lists = [sweep.vary[k] for k in keys]
@@ -402,11 +442,27 @@ def probe_combos(cfg: SweepUIConfig) -> list[dict[str, Any]]:
             None,
         )
         if eligible_sl is not None:
-            flat = dict(sweep.fixed)
-            flat.update(baseline)
-            flat[f"{_LEGRISK_PREFIX}reentry_sl"] = {"type": "LAZY_LEG"}
-            flat[stoploss_key] = eligible_sl
-            probes.append(nest_combo(flat, cfg))
+            base_lazy_flat = dict(sweep.fixed)
+            base_lazy_flat.update(baseline)
+            base_lazy_flat[f"{_LEGRISK_PREFIX}reentry_sl"] = {"type": "LAZY_LEG"}
+            base_lazy_flat[stoploss_key] = eligible_sl
+            probes.append(nest_combo(base_lazy_flat, cfg))
+
+            strike_keys = (
+                [f"{_SHARED_PREFIX}strike"]
+                if cfg.linked_ce_pe
+                else [f"{_leg_prefix(i)}strike" for i in range(len(cfg.legs))]
+            )
+            for strike_key in strike_keys:
+                baseline_kind = baseline.get(strike_key, {}).get("kind")
+                alt_choice = next(
+                    (v for v in sweep.vary.get(strike_key, []) if v.get("kind") != baseline_kind),
+                    None,
+                )
+                if alt_choice is not None:
+                    flat = dict(base_lazy_flat)
+                    flat[strike_key] = alt_choice
+                    probes.append(nest_combo(flat, cfg))
 
     return probes
 

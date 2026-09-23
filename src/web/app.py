@@ -1257,6 +1257,7 @@ def analyze_portfolio_basket(
     date_range: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    very_long_morning_mode: bool = False,
 ) -> dict:
     rows, _ = _read_rows([Path(p) for p in csv_file])
     # Same instrument/DTE/backtest-period/entry-time/exit-time scoping as every
@@ -1285,11 +1286,24 @@ def analyze_portfolio_basket(
         "midday": midday_budget,
         "afternoon": afternoon_budget,
     }
+    # "Very long morning": collapses short_morning/long_morning/midday's own
+    # narrower entry/exit cutoffs into ONE session covering any entry before
+    # noon that's held into the afternoon (see classify_very_long_morning_bucket)
+    # - reuses the SAME long_morning_budget value/field for its budget rather
+    # than adding a new one; short_morning_budget/midday_budget are simply
+    # unused in this mode (bucket_order below doesn't include those names, so
+    # their budgets, even if still sitting in the dict above, are never
+    # summed/allocated against - see size_and_summarize's own "total_lots").
+    bucket_order = portfolio.VERY_LONG_MORNING_BUCKET_ORDER if very_long_morning_mode else None
+    classify_fn = portfolio.classify_very_long_morning_bucket if very_long_morning_mode else None
+    if very_long_morning_mode:
+        budgets["very_long_morning"] = long_morning_budget
     return portfolio.build_portfolio(
         rows, REPORTS_DIR, instrument, threshold=threshold, top_n=top_n, budgets=budgets,
         max_share=max_share, min_lots=min_lots, max_lots=max_lots,
         date_from=trade_date_from, date_to=trade_date_to, stale_after_days=stale_after_days,
         check_stale_pool=check_stale_pool,
+        bucket_order=bucket_order, classify_fn=classify_fn,
     )
 
 
@@ -1325,6 +1339,7 @@ def portfolio_sweep_start(
     date_range: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    very_long_morning_mode: bool = False,
 ) -> dict:
     """Same rows/filters/budgets as /api/analyze/portfolio-basket, just re-run once
     per grid point (threshold x top_n x min_lots x max_lots) instead of once - see
@@ -1363,17 +1378,28 @@ def portfolio_sweep_start(
         "midday": midday_budget,
         "afternoon": afternoon_budget,
     }
+    # See analyze_portfolio_basket's own comment - same "very long morning"
+    # scheme, same reuse of long_morning_budget's value, available in the
+    # sweep grid too so this bucket definition can be parameter-swept exactly
+    # like the regular 4-bucket one already is.
+    bucket_order = portfolio.VERY_LONG_MORNING_BUCKET_ORDER if very_long_morning_mode else None
+    classify_fn = portfolio.classify_very_long_morning_bucket if very_long_morning_mode else None
+    if very_long_morning_mode:
+        budgets["very_long_morning"] = long_morning_budget
     try:
         portfolio_sweep_state.start(
             rows, REPORTS_DIR, instrument, grid, budgets=budgets, max_share=max_share,
             date_from=trade_date_from, date_to=trade_date_to,
-            # A date window is part of what makes previously-stopped results
-            # comparable to this run's grid - resuming across a CHANGED window
-            # (e.g. dropping a stale "since 2025-08-01" for "since 2026-08-01",
-            # trade-level or candidate-scope) must start clean rather than
-            # silently keep results computed against the old window, same
-            # reasoning as regime_sweep_state's own context check.
-            context=(trade_date_from, trade_date_to, date_from, date_to),
+            bucket_order=bucket_order, classify_fn=classify_fn,
+            # A date window (or bucket scheme) is part of what makes
+            # previously-stopped results comparable to this run's grid -
+            # resuming across a CHANGED window (e.g. dropping a stale "since
+            # 2025-08-01" for "since 2026-08-01", trade-level or candidate-
+            # scope) or a changed bucket scheme (regular vs "very long
+            # morning") must start clean rather than silently keep results
+            # computed against the old window/scheme, same reasoning as
+            # regime_sweep_state's own context check.
+            context=(trade_date_from, trade_date_to, date_from, date_to, very_long_morning_mode),
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

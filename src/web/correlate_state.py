@@ -162,7 +162,15 @@ def compute_correlation(rows: list[dict[str, Any]], *, threshold: float = DEFAUL
     matrix = correlation_matrix(series)
     score_key = combined_sort_key(eligible_rows)
     ranked_ids = sorted(series.keys(), key=lambda cid: score_key(row_by_id[cid]), reverse=True)
-    basket, skipped = pick_diversified_basket(ranked_ids, matrix, threshold=threshold)
+
+    # See src/web/portfolio.py's own same_window for why this exists: a short
+    # backtest window can leave correlation "unknown" for almost every pair,
+    # letting the same entry/exit clock-time window get picked repeatedly.
+    def same_window(a: str, b: str) -> bool:
+        ra, rb = row_by_id[a], row_by_id[b]
+        return (ra.get("entry_time"), ra.get("exit_time")) == (rb.get("entry_time"), rb.get("exit_time"))
+
+    basket, skipped = pick_diversified_basket(ranked_ids, matrix, threshold=threshold, same_window=same_window)
     for entry in basket:
         row = row_by_id[entry["combo_id"]]
         entry["score"] = score_key(row)

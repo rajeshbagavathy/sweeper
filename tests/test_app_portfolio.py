@@ -50,6 +50,47 @@ def test_analyze_portfolio_basket_endpoint_wires_through_to_build_portfolio(tmp_
     assert result["buckets"]["short_morning"]["members"][0]["lots"] == 10
 
 
+def test_analyze_portfolio_basket_endpoint_very_long_morning_mode(tmp_path, monkeypatch):
+    """very_long_morning_mode=True must switch to the 2-bucket scheme (see
+    portfolio.VERY_LONG_MORNING_BUCKET_ORDER/classify_very_long_morning_bucket)
+    and reuse long_morning_budget as that bucket's own budget - an 11am entry
+    held to a 2:45pm exit has no home in the regular 4-bucket scheme at all
+    (see test_portfolio.py's own coverage of that gap), so its presence here
+    confirms the mode is actually wired through, not just accepted and ignored."""
+    import src.web.app as app_mod
+
+    csv_path = tmp_path / "results.csv"
+    fieldnames = ["combo_id", "status", "instrument", "entry_time", "exit_time", "return_max_dd", "reward_risk_ratio", "total_pnl", "max_drawdown", "stoploss.kind", "stoploss.value"]
+    with csv_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({
+            "combo_id": "gap1", "status": "ok", "instrument": "NIFTY",
+            "entry_time": "11:30", "exit_time": "14:45",
+            "return_max_dd": "10", "reward_risk_ratio": "1.5", "total_pnl": "2000", "max_drawdown": "-1000",
+            "stoploss.kind": "amount", "stoploss.value": "7000",
+        })
+
+    reports_dir = tmp_path / "reports"
+    _write_report(reports_dir / "nifty" / "gap1.csv", [(str(n), f"2025-09-{n+1:02d}", "100") for n in range(6)])
+    monkeypatch.setattr(app_mod, "REPORTS_DIR", reports_dir)
+
+    without_mode = app_mod.analyze_portfolio_basket(
+        csv_file=[str(csv_path)], instrument="NIFTY", long_morning_budget=10, max_share=1.0,
+    )
+    assert without_mode["buckets"].keys() == {"short_morning", "long_morning", "midday", "afternoon"}
+    assert all(not b["members"] for b in without_mode["buckets"].values())  # the gap - lands nowhere today
+
+    with_mode = app_mod.analyze_portfolio_basket(
+        csv_file=[str(csv_path)], instrument="NIFTY", long_morning_budget=10, max_share=1.0,
+        very_long_morning_mode=True,
+    )
+    assert with_mode["buckets"].keys() == {"very_long_morning", "afternoon"}
+    ids = [m["combo_id"] for m in with_mode["buckets"]["very_long_morning"]["members"]]
+    assert ids == ["gap1"]
+    assert with_mode["buckets"]["very_long_morning"]["budget"] == 10.0  # reused from long_morning_budget
+
+
 def test_analyze_portfolio_basket_endpoint_scopes_by_date_range(tmp_path, monkeypatch):
     """A Backtest period pill active on the Analyze page must keep the basket
     scoped to combos recorded under that SAME (start_date, end_date) window - not
@@ -219,9 +260,14 @@ def test_analyze_portfolio_basket_endpoint_scopes_candidate_rows_by_date_from(tm
             "return_max_dd": "10", "reward_risk_ratio": "1.5", "total_pnl": "2000", "max_drawdown": "-1000",
             "stoploss.kind": "amount", "stoploss.value": "7000",
         })
+        # Different exit_time from old1 - this test is about date-range scoping,
+        # not diversification, but a shared (entry, exit) with unknown/constant
+        # correlation would now trip pick_diversified_basket's same_window
+        # dedup tie-break (see src/correlate.py) and drop one of them, which
+        # isn't what's under test here.
         writer.writerow({
             "combo_id": "new1", "status": "ok", "instrument": "NIFTY",
-            "entry_time": "09:17", "exit_time": "11:20", "start_date": "2026-08-05",
+            "entry_time": "09:17", "exit_time": "11:25", "start_date": "2026-08-05",
             "return_max_dd": "10", "reward_risk_ratio": "1.5", "total_pnl": "2000", "max_drawdown": "-1000",
             "stoploss.kind": "amount", "stoploss.value": "7000",
         })
@@ -284,7 +330,7 @@ def test_portfolio_sweep_start_endpoint_forwards_date_window_and_scopes_context(
 
     assert seen_kwargs["date_from"] == "2026-08-01"
     assert seen_kwargs["date_to"] == "2026-08-31"
-    assert seen_kwargs["context"] == ("2026-08-01", "2026-08-31", None, None)
+    assert seen_kwargs["context"] == ("2026-08-01", "2026-08-31", None, None, False)
 
 
 def _wait_until_done(state, timeout_s: float = 2.0) -> dict:

@@ -77,7 +77,24 @@ def correlation_matrix(
     """Pairwise correlation of each pair's *overlapping* trade-dates only. A pair
     sharing fewer than `min_overlap` dates gets None ("insufficient data") instead of
     a number computed from too few points to be meaningful - callers must not treat
-    None as "uncorrelated", only as "unknown"."""
+    None as "uncorrelated", only as "unknown".
+
+    ONE exception to "too few points -> unknown": if the two series are byte-
+    identical (same trade-dates AND same P&L on every one of them), that's not
+    "not enough data to tell" - it IS the answer, regardless of how few points
+    there are. Confirmed live: a short backtest window (a handful of trading
+    days) routinely produces several near-duplicate combos - identical entry/
+    exit times, identical total_pnl/max_drawdown/reward_risk_ratio to the
+    rupee - because whatever parameter actually differs between them (a leg SL%,
+    a momentum threshold, a re-entry setting, ...) never once fires against that
+    window's real price action, so every trade plays out exactly the same either
+    way. With so few trading days, their overlap almost always falls below
+    min_overlap, so without this check they'd get "unknown" instead of the
+    obviously-correct "identical" - and pick_diversified_basket treats unknown
+    as "keep it", letting every near-duplicate straight into the same basket.
+    Guarded on a non-empty series so two candidates that both simply have ZERO
+    trades in this window aren't misread as "the same strategy" - that's
+    genuinely unknown, not identical."""
     ids = list(series)
     matrix: dict[str, dict[str, float | None]] = {i: {} for i in ids}
     for a_idx, a in enumerate(ids):
@@ -94,6 +111,8 @@ def correlation_matrix(
                     corr = statistics.correlation(xs, ys)
                 except statistics.StatisticsError:
                     corr = None  # e.g. one series is constant over the overlap
+            elif series[a] and series[a] == series[b]:
+                corr = 1.0
             matrix[a][b] = corr
             matrix[b][a] = corr
     return matrix
@@ -104,12 +123,26 @@ def pick_diversified_basket(
     matrix: dict[str, dict[str, float | None]],
     *,
     threshold: float = DEFAULT_CORR_THRESHOLD,
+    same_window: Callable[[str, str], bool] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Greedy diversification: walk `ranked_ids` (already best-first), keep a combo
     only if its correlation to every combo already in the basket stays below
     `threshold`. "Insufficient data" (None) pairs never block inclusion - unknown
     isn't evidence of correlation, so being conservative here means erring toward
-    keeping a candidate, not excluding it."""
+    keeping a candidate, not excluding it.
+
+    ONE exception: `same_window(a, b)` - True when two combos share the exact
+    same (entry_time, exit_time). Confirmed live: a short backtest window (few
+    trading days) makes real correlation "unknown" for almost every pair in a
+    narrow-session bucket (e.g. a 14:55-15:38 afternoon slice with only 4
+    overlapping days, one short of MIN_OVERLAP_DAYS) - "unknown, so keep it"
+    then lets the SAME clock-time window get picked over and over, which isn't
+    genuine diversification even though no individual pair is PROVEN
+    correlated. Two candidates trading the identical entry/exit window are a
+    much stronger prior of redundancy than "insufficient overlap" alone - when
+    correlation itself can't settle it, same_window does: treated as maximally
+    correlated (1.0) rather than falling back to "unknown, keep it". Left
+    unset (the default), behavior is unchanged from before this existed."""
     basket: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for cid in ranked_ids:
@@ -117,6 +150,8 @@ def pick_diversified_basket(
         worst_with: str | None = None
         for picked in basket:
             corr = matrix.get(cid, {}).get(picked["combo_id"])
+            if corr is None and same_window is not None and same_window(cid, picked["combo_id"]):
+                corr = 1.0
             if corr is not None and (worst is None or corr > worst):
                 worst, worst_with = corr, picked["combo_id"]
         if worst is not None and worst >= threshold:

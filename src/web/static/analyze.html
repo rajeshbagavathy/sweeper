@@ -21,17 +21,24 @@
     separate - check all the ones you want to compare, then Load. Nothing here can
     affect a sweep that's currently running.
   </p>
-  <div id="csvFileList" class="row" style="align-items:flex-start; gap: 14px;"></div>
+  <div id="csvFileList" style="display:flex; flex-direction:column; max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;"></div>
   <div class="actions" style="margin-top:12px;">
     <button class="primary" onclick="loadSelectedFiles()">Load selected</button>
     <button class="secondary" onclick="selectAllFiles()">Select all</button>
     <button class="secondary" onclick="refreshFileList()">Refresh file list</button>
     <button class="secondary" onclick="loadMasterCsv()">Load master (all executions)</button>
+    <button class="secondary" onclick="loadAllExceptCas()">Load all (no CAS)</button>
   </div>
   <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">
     "Load master" checks and loads every file above in one click - combined with
     "Filter by Instrument" below, that's a single view across every execution you've
-    ever run, narrowed to whichever index you pick.
+    ever run, narrowed to whichever index you pick. "Load all (no CAS)" does the same
+    but skips every "*_cas_all.csv" file - use this for Portfolio/Uncorrelated
+    strategies work where you want the full backtest history, not just the CAS
+    window: a CAS-derived combo's own trade report only ever covers trades on/after
+    its cutoff date, so if the diversified basket happens to pick a CAS variant
+    instead of its long-history original, the combined portfolio's period count
+    silently gets capped to that short window regardless of any date filter.
   </p>
   <div id="loadedFilesMsg" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
 
@@ -458,7 +465,7 @@
       <input type="number" id="portfolioBudgetShortMorning" value="18" min="0" style="width:70px;">
     </div>
     <div class="field">
-      <label>Long-morning lots</label>
+      <label id="longMorningBudgetLabel">Long-morning lots</label>
       <input type="number" id="portfolioBudgetLongMorning" value="27" min="0" style="width:70px;">
     </div>
     <div class="field">
@@ -491,6 +498,21 @@
     </div>
     <button class="primary" id="portfolioComputeBtn" onclick="computePortfolio()">Recompute basket</button>
   </div>
+  <label class="checkbox-row" style="margin-top:6px;">
+    <input type="checkbox" id="portfolioVeryLongMorningMode" onchange="syncVeryLongMorningMode()">
+    Very long morning (one combined session: entry before 12pm, exit at/after 2pm - replaces
+    Short-morning/Long-morning/Midday with a single bucket, reusing the Long-morning lots field above)
+  </label>
+  <p id="veryLongMorningNote" style="font-size:11px;color:var(--muted);margin:2px 0 0;display:none;">
+    Short-morning and Midday lots are disabled and ignored in this mode - only
+    Long-morning lots (now the "very long morning" budget) and Afternoon lots apply.
+    Any entry before 12:00pm held to an exit at/after 2:00pm counts as one combined
+    session, regardless of which of the regular buckets it would have fallen into
+    (or fallen between) otherwise - see classify_very_long_morning_bucket in
+    src/web/portfolio.py for the exact rule and why the regular buckets can't
+    express this (an 11am-11:59am entry held past 2:15pm exit falls into no
+    regular bucket at all today).
+  </p>
   <label class="checkbox-row" style="margin-top:6px;">
     <input type="checkbox" id="portfolioCheckStalePool">
     Also check the whole candidate pool, not just this basket's picks (slower)
@@ -954,11 +976,15 @@ async function refreshFileList() {
   const files = res.ok ? await res.json() : [];
   const container = document.getElementById("csvFileList");
   if (!files.length) {
-    container.innerHTML = `<span style="font-size:12px;color:var(--muted);">No result files yet - run a sweep first.</span>`;
+    container.innerHTML = `<span style="display:block;padding:10px;font-size:12px;color:var(--muted);">No result files yet - run a sweep first.</span>`;
     return;
   }
   const selected = new Set(selectedFiles);
-  container.innerHTML = files.map(f => {
+  // One row per file instead of a multi-line card - with the list itself now
+  // scrollable (see csvFileList's own max-height/overflow-y), a growing number of
+  // files (CAS subsets especially - one new file per instrument per cutoff) no
+  // longer pushes the rest of the page down; ~10 rows stay visible before scrolling.
+  container.innerHTML = files.map((f, i) => {
     // Tiny (<=2 row) files are almost always smoke-tests, not real sweeps - fade
     // them out so the files that actually matter aren't lost in the list.
     const faint = f.row_count <= 2 ? "opacity:0.45;" : "";
@@ -966,18 +992,22 @@ async function refreshFileList() {
     // Whether this ONE file already mixes backtest periods (see /api/analyze/csv-
     // files - a force-redownload can silently roll a minority of rows forward) -
     // surfaced here so it's visible before the user even loads it, not just after.
-    let periodLine = "";
+    let periodBadge = "";
     if (f.date_range) {
-      periodLine = `<span style="font-size:11px;color:var(--muted);">${escapeHtml(f.date_range)}</span>`;
+      periodBadge = `<span style="flex:0 0 auto;font-size:11px;color:var(--muted);white-space:nowrap;">${escapeHtml(f.date_range)}</span>`;
     } else if (f.date_range_mixed_count) {
-      periodLine = `<span style="font-size:11px;color:#b45f00;">&#9888; ${f.date_range_mixed_count} different backtest periods mixed in this file</span>`;
+      periodBadge = `<span style="flex:0 0 auto;font-size:11px;color:#b45f00;white-space:nowrap;">&#9888; ${f.date_range_mixed_count} mixed periods</span>`;
     }
+    const modified = escapeHtml((f.modified || "").replace("T", " ").slice(0, 19));
+    const borderTop = i === 0 ? "" : "border-top:1px solid var(--border);";
     return `
-    <label class="checkbox-row" style="flex-direction:column; align-items:flex-start; gap:2px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; ${faint}">
-      <span><input type="checkbox" value="${escapeHtml(f.path)}" ${selected.has(f.path) ? "checked" : ""}> <strong>${escapeHtml(instruments)}</strong></span>
-      <span style="font-size:11px;color:var(--muted);">${escapeHtml(f.name)}</span>
-      <span style="font-size:11px;color:var(--muted);">${f.row_count} rows &middot; ${escapeHtml((f.modified || "").replace("T", " ").slice(0, 19))}</span>
-      ${periodLine}
+    <label class="checkbox-row" style="gap:8px; padding:6px 10px; ${borderTop} ${faint}" title="${escapeHtml(f.name)}">
+      <input type="checkbox" value="${escapeHtml(f.path)}" ${selected.has(f.path) ? "checked" : ""}>
+      <strong style="flex:0 0 auto;">${escapeHtml(instruments)}</strong>
+      <span style="flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--muted);">${escapeHtml(f.name)}</span>
+      <span style="flex:0 0 auto; font-size:11px; color:var(--muted); white-space:nowrap;">${f.row_count} rows</span>
+      <span style="flex:0 0 auto; font-size:11px; color:var(--muted); white-space:nowrap;">${modified}</span>
+      ${periodBadge}
     </label>
   `;
   }).join("");
@@ -987,12 +1017,39 @@ function selectAllFiles() {
   document.querySelectorAll("#csvFileList input[type=checkbox]").forEach(el => el.checked = true);
 }
 
+// A CAS-subset file's own trade reports are deliberately SLICED to only cover
+// trades on/after that subset's cutoff date (see scripts/build_cas_subset.py) -
+// checking the filename is enough to spot one, since "results_web_<ts>_<instrument>
+// _cas_all.csv" is that script's own fixed, exclusive naming convention (also used
+// as its own re-scan glob, "results_web_*_cas_all.csv" - matching it here keeps
+// this in lockstep with what the tool itself considers "one of its own files").
+function isCasSubsetFile(path) {
+  return /_cas_all\.csv$/.test(path);
+}
+
+function selectAllFilesExceptCas() {
+  document.querySelectorAll("#csvFileList input[type=checkbox]").forEach(el => {
+    el.checked = !isCasSubsetFile(el.value);
+  });
+}
+
 async function loadMasterCsv() {
   // "Master CSV" isn't one physical file - every "Start" writes its own, so this is
   // select-all + Load in one click, giving the same combined view across every
   // execution you've ever run. Use "Filter by Instrument" right after to narrow it
   // down to just one index.
   selectAllFiles();
+  await loadSelectedFiles();
+}
+
+async function loadAllExceptCas() {
+  // Same as loadMasterCsv() but excludes every CAS-subset output - for Portfolio/
+  // Uncorrelated strategies work spanning a long date range, where a CAS variant
+  // silently outranking and replacing its own long-history original in the
+  // diversified basket would cap the combined result to just the CAS window,
+  // regardless of any "Backtest date from" filter set on this page (its own trade
+  // report genuinely doesn't have anything older to show, filter or not).
+  selectAllFilesExceptCas();
   await loadSelectedFiles();
 }
 
@@ -2578,18 +2635,54 @@ function renderCorrelateResults(result, resetPages = true) {
 
   html += renderBasketPortfolio(result.basket_portfolio, result.basket.length);
 
+  // "Save basket in AlgoTest" below always acts on whichever basket was most
+  // recently computed ANYWHERE on the page (see that block's own comment) -
+  // this IS that shared pointer, so computing this basket makes Save act on
+  // it, same as computing a Portfolio basket does for that section.
+  lastPortfolioComboIds = result.basket.map((b) => b.combo_id);
+
   html += paginatedSection(
     "basket",
     `Recommended diversified basket (correlation threshold ${result.threshold})`,
     "",
-    "<th>Combo</th><th>Entry time</th><th>Exit time</th><th>Score</th><th>Max correlation to basket</th>",
+    "<th>Combo</th><th>Entry time</th><th>Exit time</th><th>Score</th><th>Max correlation to basket</th><th>Saved?</th>",
     result.basket,
     (b) => {
       const corr = b.max_corr_to_basket === null || b.max_corr_to_basket === undefined ? "-" : b.max_corr_to_basket.toFixed(2);
-      return `<tr><td>${link(b.combo_id)}</td><td>${escapeHtml(b.entry_time || "-")}</td><td>${escapeHtml(b.exit_time || "-")}</td><td>${b.score.toFixed(3)}</td><td>${corr}</td></tr>`;
+      // data-combo-id + portfolio-save-cell: same convention the Portfolio
+      // section's own basket rows use, so the shared "Save basket in
+      // AlgoTest" status-polling logic (comboRows(), renderBasketSaveStatus())
+      // paints into this row too, live, while a save is running - not a
+      // separate save mechanism, the same one.
+      return `<tr data-combo-id="${escapeHtml(b.combo_id)}"><td>${link(b.combo_id)}</td><td>${escapeHtml(b.entry_time || "-")}</td>` +
+        `<td>${escapeHtml(b.exit_time || "-")}</td><td>${b.score.toFixed(3)}</td><td>${corr}</td>` +
+        `<td class="portfolio-save-cell">-</td></tr>`;
     },
     resetPages,
   );
+
+  // Same save block Portfolio's own basket panel uses (identical markup/
+  // classes on purpose - see startBasketSave() - so this is the SAME feature,
+  // not a parallel one to maintain).
+  html += `
+    <div class="portfolio-save-block" style="margin-top:14px; display:${result.basket.length ? "" : "none"};">
+      <div class="row" style="align-items:center;">
+        <button class="primary portfolio-save-btn" onclick="startBasketSave()">Save basket in AlgoTest</button>
+        <button class="secondary small portfolio-save-stop-btn" onclick="stopBasketSave()" style="display:none;">Stop</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin:4px 0 0;">
+        Opens one browser window and saves every combo in the basket above as a
+        named AlgoTest strategy, one after another - asks for a name prefix
+        once up front (saved as "prefix_comboid_starttime"), then updates each
+        row's own status live as it goes (only rows on the currently-shown
+        page above will visibly update - Prev/Next through the basket while
+        it's running to check others). One combo failing doesn't stop the
+        rest. Always saves whichever basket was most recently computed on
+        this page - if you've computed a Portfolio basket since, that's what
+        Save acts on instead.
+      </p>
+      <div class="portfolio-save-status" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+    </div>`;
 
   html += paginatedSection(
     "skipped",
@@ -2615,7 +2708,24 @@ const PORTFOLIO_BUCKET_LABELS = {
   long_morning: "Long-morning (held to early afternoon)",
   midday: "Midday (reuses the freed morning margin)",
   afternoon: "Afternoon (separate full margin)",
+  very_long_morning: "Very long morning (entry before 12pm, held into the afternoon)",
 };
+// "Very long morning" mode (see classify_very_long_morning_bucket in
+// src/web/portfolio.py) replaces the regular Short-morning/Long-morning/Midday
+// 3-way split with one combined session - so those three fields don't mean
+// anything real once it's on (Short-morning/Midday are simply unused
+// server-side, and Long-morning is repurposed as this bucket's own budget).
+// Disabling (not hiding) Short-morning/Midday here is a visual guardrail
+// against typing a value into a field that's silently ignored - the actual
+// enforcement is server-side (see analyze_portfolio_basket's own comment).
+function syncVeryLongMorningMode() {
+  const on = document.getElementById("portfolioVeryLongMorningMode").checked;
+  document.getElementById("portfolioBudgetShortMorning").disabled = on;
+  document.getElementById("portfolioBudgetMidday").disabled = on;
+  document.getElementById("longMorningBudgetLabel").textContent = on ? "Very long morning lots" : "Long-morning lots";
+  document.getElementById("veryLongMorningNote").style.display = on ? "block" : "none";
+}
+
 function portfolioParams() {
   const params = baseParams();
   if (activeInstrument !== null) params.set("instrument", activeInstrument);
@@ -2648,6 +2758,14 @@ function portfolioParams() {
   params.set("long_morning_budget", document.getElementById("portfolioBudgetLongMorning").value || "27");
   params.set("midday_budget", document.getElementById("portfolioBudgetMidday").value || "18");
   params.set("afternoon_budget", document.getElementById("portfolioBudgetAfternoon").value || "45");
+  // "Very long morning" - collapses short_morning/long_morning/midday into one
+  // combined session (see classify_very_long_morning_bucket in src/web/
+  // portfolio.py); short_morning_budget/midday_budget above are still sent but
+  // simply unused server-side in this mode - long_morning_budget doubles as
+  // this bucket's own budget, no separate field needed.
+  if (document.getElementById("portfolioVeryLongMorningMode").checked) {
+    params.set("very_long_morning_mode", "true");
+  }
   // No % field on purpose - it and the absolute Max lots field were confusingly
   // easy to mix up (typing "8" meaning "8 lots" into a field that actually meant
   // "8% of budget" silently caps everything far tighter than intended). Max lots
@@ -3140,16 +3258,75 @@ function renderPortfolioSweepStatus(s) {
 // actions (Compute basket, Favorite) look their own params up here by that fixed
 // index, which onclick handlers below carry regardless of how the table is sorted.
 let sweepResultsByGridIdx = [];
+let sweepResultsLastStatus = null;
+
+// Every sortable column in the Parameter sweep results table - `get` reads the
+// raw (unformatted) value straight off a result row, used for both sorting and
+// (via the shared `num`/toLocaleString formatting in the render loop below) the
+// same numbers already shown. Click a header to sort by it; click the same one
+// again to flip direction - see sortSweepResultsBy.
+const SWEEP_SORT_COLUMNS = [
+  { key: "threshold", label: "Threshold", get: r => r.threshold },
+  { key: "top_n", label: "Top N", get: r => r.top_n },
+  { key: "min_lots", label: "Min lots", get: r => r.min_lots },
+  { key: "max_lots", label: "Max lots", get: r => r.max_lots },
+  { key: "reward_risk_ratio", label: "Reward:Risk", get: r => r.reward_risk_ratio },
+  { key: "overall_profit", label: "Overall Profit", get: r => r.overall_profit },
+  { key: "return_max_dd", label: "Return/MaxDD", get: r => r.return_max_dd },
+  { key: "win_pct", label: "Win %", get: r => r.win_pct },
+  { key: "num_periods", label: "Periods", get: r => r.num_periods },
+  { key: "total_picks", label: "Picks", get: r => r.total_picks },
+  { key: "unallocated_lots", label: "Unused lots", get: r => r.unallocated_lots ?? 0 },
+  { key: "dropped_for_min_lots", label: "Dropped", get: r => r.dropped_for_min_lots ?? 0 },
+];
+// Defaults match this table's original fixed behavior (highest Reward:Risk
+// first) - unchanged until you actually click a header.
+let sweepSortKey = "reward_risk_ratio";
+let sweepSortDir = "desc"; // "desc" | "asc"
+
+function sortSweepResultsBy(key) {
+  if (sweepSortKey === key) {
+    sweepSortDir = sweepSortDir === "desc" ? "asc" : "desc";
+  } else {
+    sweepSortKey = key;
+    sweepSortDir = "desc"; // a freshly-clicked column always starts highest-first
+  }
+  renderPortfolioSweepResults(sweepResultsByGridIdx, sweepResultsLastStatus);
+}
+
+function sweepSortHeaderCell(col) {
+  const active = col.key === sweepSortKey;
+  const arrow = active ? (sweepSortDir === "desc" ? " &#9660;" : " &#9650;") : "";
+  return `<th style="cursor:pointer;user-select:none;white-space:nowrap;" ` +
+    `onclick="sortSweepResultsBy('${col.key}')" title="Sort by ${escapeHtml(col.label)}">` +
+    `${escapeHtml(col.label)}${arrow}</th>`;
+}
 
 function renderPortfolioSweepResults(results, status) {
   const el = document.getElementById("sweepResults");
   sweepResultsByGridIdx = results;
+  sweepResultsLastStatus = status;
   if (!results.length) { el.innerHTML = ""; return; }
 
-  // Sorted highest Reward:Risk first, for display only - gridIdx (each row's
-  // position in the unsorted `results`) is what row actions actually key off.
+  // Sorted by whichever column was last clicked (Reward:Risk, highest first, by
+  // default) - for display only, gridIdx (each row's position in the unsorted
+  // `results`) is what row actions actually key off. A row missing this
+  // column's value (e.g. Reward:Risk when a basket landed empty) always sinks
+  // to the bottom regardless of direction, rather than sorting as if it were
+  // the lowest (ascending) or highest (a bare descending -Infinity) value.
+  const activeCol = SWEEP_SORT_COLUMNS.find(c => c.key === sweepSortKey) || SWEEP_SORT_COLUMNS[4];
+  const dirMul = sweepSortDir === "desc" ? -1 : 1;
   const sorted = results.map((r, gridIdx) => ({ r, gridIdx }))
-    .sort((a, b) => (b.r.reward_risk_ratio ?? -Infinity) - (a.r.reward_risk_ratio ?? -Infinity));
+    .sort((a, b) => {
+      const av = activeCol.get(a.r);
+      const bv = activeCol.get(b.r);
+      const aMissing = av === null || av === undefined;
+      const bMissing = bv === null || bv === undefined;
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+      return dirMul * (av - bv);
+    });
   const num = (v, digits) => (v === null || v === undefined) ? "-" : v.toFixed(digits);
   // Row actions replay a specific combination's basket - only offered once the
   // sweep itself is settled, since this table re-renders wholesale on every poll
@@ -3173,9 +3350,7 @@ function renderPortfolioSweepResults(results, status) {
       `across every combination above (hover a row for its own exact range).</p>`;
   }
   html += "<div class='table-scroll'><table><thead><tr>" +
-    "<th>Threshold</th><th>Top N</th><th>Min lots</th><th>Max lots</th><th>Reward:Risk</th>" +
-    "<th>Overall Profit</th><th>Return/MaxDD</th><th>Win %</th><th>Periods</th><th>Picks</th>" +
-    "<th>Unused lots</th><th>Dropped</th>" +
+    SWEEP_SORT_COLUMNS.map(sweepSortHeaderCell).join("") +
     (actionsEnabled ? "<th></th>" : "") + "</tr></thead><tbody>";
   sorted.forEach(({ r, gridIdx }, displayIdx) => {
     const star = displayIdx === 0 ? "★ " : "";
@@ -3209,10 +3384,12 @@ function renderPortfolioSweepResults(results, status) {
         `<div id="sweepRow_${gridIdx}_detailBox" style="padding:8px 0;"></div></td></tr>`;
     }
   });
+  const sortDirWord = sweepSortDir === "desc" ? "highest" : "lowest";
   html += "</tbody></table></div>" +
     `<p style='font-size:11px;color:var(--muted);margin:6px 0 0;'>` +
-    "★ = highest Reward:Risk in this sweep " +
-    "(table sorted highest-first). Compare it to its neighbors above before trusting it - a standout that's " +
+    `Click any column header to sort by it - click again to flip direction. ` +
+    `&#9660;/&#9650; marks the active sort; ★ = ${sortDirWord} ${escapeHtml(activeCol.label)} in this sweep. ` +
+    "Compare it to its neighbors above before trusting it - a standout that's " +
     "an outlier next to settings just one step away is more likely noise than a genuine edge. " +
     "<b>Unused lots</b> is how much of your total 18+27+18+45-style budget this combination left undeployed " +
     "across all four buckets (Max lots too tight for the picks available); <b>Dropped</b> is how many " +

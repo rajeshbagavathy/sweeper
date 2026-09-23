@@ -22,7 +22,20 @@ login:
   email_input: "input[name=\"phone\"]"    # actually your phone-number input
   password_input: "input[name=\"password\"]"
   submit_button: "button[type=\"submit\"]:has-text(\"Login\")"
-  logged_in_marker: "text=Credits Available"   # confirmed: only rendered once logged in (there's no actual <header> tag on this page, despite the earlier note - fixed after a live smoke-test caught it)
+  # AlgoTest changed this label from "Credits Available" to "Credits:<amount>"
+  # (confirmed live 2026-09-22, via a diagnostic screenshot of the builder page's
+  # top-right account badge, e.g. "Credits:2400") - the old selector silently
+  # never matched again after that, so is_logged_in() always returned False and
+  # every sweep worker (both accounts) kept attempting a needless re-login,
+  # which then failed outright: AlgoTest's own /login page, when already
+  # logged in, shows "You are already logged in" instead of a phone/password
+  # form, so there was no input[name="phone"] to ever fill - that's the
+  # "Locator.fill: Timeout 30000ms exceeded... input[name=\"phone\"]" error
+  # every worker was hitting, regardless of how many times you logged back in
+  # by hand. "text=Credits:" (substring, not exact) is deliberately looser than
+  # the old exact wording so a future credits-count change alone won't break
+  # this again the same way.
+  logged_in_marker: "text=Credits:"
 
   # --- account menu / logout (added for the "logout & re-login for a longer
   # session" feature) ---
