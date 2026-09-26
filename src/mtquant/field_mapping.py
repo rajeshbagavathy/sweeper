@@ -26,10 +26,22 @@ cross-checked, not just eyeballed):
   17500 strike... interpreted as the literal strike level"), NOT a premium
   value. An earlier test that typed "40" into that field and saw it accepted
   without error was misleading - it silently set strike=40, not "enter at
-  premium 40". EntryByPremium must instead go through the dedicated
-  "Premium / Greek Legs" sub-form (Value Type=Premium/NearestPremium, a
-  "Between" range, Max Depth, Side=ITM/OTM/Both) - see the still-open item
-  below.
+  premium 40".
+- CONFIRMED AND LOCATED (with the user's direct guidance, then verified
+  live): EntryByPremium legs use the "Premium / Greek Legs" sub-form,
+  opened by clicking the Strike column's dropdown ARROW specifically (not
+  the text part) on a leg added while the "Premium / Greek Leg" checkbox
+  (top-right of the dialog) is ticked. The sub-form's Value Type dropdown
+  offers Premium/NearestPremium/Delta/IV/Theta/NearestDelta/
+  NearestStraddlePremium; NearestPremium is the right choice for AlgoTest's
+  EntryByPremium - it takes a single target Value (not a range), with Cond
+  defaulting to "Any" and Max Depth/Side left at their defaults (15/BOTH),
+  matching AlgoTest's single StrikeParameter number with no tolerance-range
+  decision needed. Confirmed the value genuinely persists (reopening the
+  popup shows it retained) even though the leg grid's own closed-state
+  Strike text doesn't visually refresh to show it - a cosmetic quirk in
+  what the dialog itself flags as a "recently added feature, use with
+  care", not a sign the value didn't take.
 - CONFIRMED: per-leg Stoploss/Target "type" choices are Premium (% or
   points off entry premium - this is what AlgoTest's LegStopLoss type
   "Percentage" maps to), AbsolutePremium (a literal price, no math),
@@ -38,14 +50,11 @@ cross-checked, not just eyeballed):
   until price moves a further signed amount ("-1%" = wait for a further 1%
   drop) - this is exactly AlgoTest's per-leg Momentum
   (PercentageDown/UnderlyingPointsUp/Down), not a guess anymore.
-- STILL OPEN (flagged in `notes`/`LegPlan.notes`, not guessed): the exact
-  live UI location of the "Premium / Greek Legs" sub-form (Value
-  Type/Between/Max Depth/Side) - ticking the checkbox and clicking Add Leg
-  produced an ordinary leg row in this session's live test, not the
-  documented sub-form, and the leg grid turned out to be a separately
-  UI-Automation-invisible control (not enumerable via the standard tree
-  walk the rest of this dialog was mapped with), so this needs a fresh
-  targeted pass, not a repeat of the same steps; whether AlgoTest's
+- STILL OPEN (flagged in `notes`/`LegPlan.notes`, not guessed): the leg
+  grid turned out to be a UI-Automation-invisible control (not enumerable
+  via the standard tree walk the rest of this dialog was mapped with), so
+  automation.py will need coordinate/image-based interaction for the leg
+  grid specifically, unlike the rest of this dialog; whether AlgoTest's
   ExitIndicators time maps to mtQuant's "End Time" or "SqOff Time" (or
   both); the exact per-leg wiring of ReExecute's "OnSL/OnTarget ReExecute
   Count" and "SL Portfolio Name/Count" fields for multi-leg NextLeg cases;
@@ -98,6 +107,24 @@ def _momentum_to_wait_trade(momentum: dict) -> tuple[str | None, str | None]:
     return None, f"unrecognized Momentum type {kind!r} - not mapped to Wait & Trade"
 
 
+def build_premium_selection(target_premium: float) -> dict:
+    """The "Premium / Greek Legs" sub-form values for an EntryByPremium leg -
+    opened via the leg grid's Strike column dropdown ARROW (not the text
+    part) on a leg added while "Premium / Greek Leg" is ticked. NearestPremium
+    takes a single target value directly (Cond defaulting to "Any"), so
+    there's no tolerance-range decision to make - confirmed live, including
+    that the value genuinely persists across reopening the popup even though
+    the leg grid's own closed-state Strike text doesn't visually refresh.
+    """
+    return {
+        "value_type": "NearestPremium",
+        "value": target_premium,
+        "cond": "Any",
+        "max_depth": 15,  # dialog's own default - left as-is per live guidance
+        "side": "BOTH",  # dialog's own default - left as-is per live guidance
+    }
+
+
 @dataclass
 class LegPlan:
     leg_id: str
@@ -107,6 +134,7 @@ class LegPlan:
     expiry: str
     strike_mode: str  # "ATM" | "OTM<n>" | "ITM<n>" | "PREMIUM"
     strike_value: Any  # the ATM/OTM/ITM label itself, or the numeric premium for "PREMIUM"
+    premium_selection: dict | None  # set iff strike_mode == "PREMIUM" - see build_premium_selection()
     stoploss_pct: float | None
     target_value: float | None
     trail_sl: dict | None  # {"instrument_move": ..., "stoploss_move": ...} | None
@@ -121,18 +149,14 @@ class LegPlan:
     def from_algtst_leg(cls, leg: AlgtstLeg, *, idle: bool) -> LegPlan:
         notes: list[str] = []
 
+        premium_selection = None
         if leg.entry_type == "EntryByStrikeType":
             strike_mode = str(leg.strike_parameter)  # "ATM" / "OTM2" / "ITM1" / ...
             strike_value = leg.strike_parameter
         elif leg.entry_type == "EntryByPremium":
             strike_mode = "PREMIUM"
             strike_value = leg.strike_parameter
-            notes.append(
-                f"EntryByPremium (target premium {leg.strike_parameter}): confirmed this does NOT go in the plain "
-                "Strike column (that's an absolute strike price in mtQuant, per its own docs) - it needs the "
-                "'Premium / Greek Legs' sub-form (Value Type=Premium, a Between range, Max Depth, Side). Live UI "
-                "location of that sub-form not yet found; a Between-range tolerance policy also needs deciding."
-            )
+            premium_selection = build_premium_selection(leg.strike_parameter)
         else:
             strike_mode = "UNKNOWN"
             strike_value = leg.strike_parameter
@@ -187,6 +211,7 @@ class LegPlan:
             expiry=leg.expiry_kind,
             strike_mode=strike_mode,
             strike_value=strike_value,
+            premium_selection=premium_selection,
             stoploss_pct=stoploss_pct,
             target_value=target_value,
             trail_sl=trail_sl,

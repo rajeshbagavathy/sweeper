@@ -106,18 +106,23 @@ def test_plain_atm_straddle_maps_cleanly():
     assert not ce.has_notes
 
 
-def test_premium_based_leg_flags_a_note_but_still_carries_the_value():
+def test_premium_based_leg_maps_cleanly_to_nearest_premium_selection():
     strategy = _strategy(
         _definition(ListOfLegConfigs=[_leg("leg1", "CE", 40, entry_type="EntryByPremium"), _leg("leg2", "PE", 40, entry_type="EntryByPremium")]),
         _item("1"),
     )
     plan = build_portfolio_plan(strategy)
-    assert plan.has_notes
     ce = plan.legs[0]
     assert ce.strike_mode == "PREMIUM"
     assert ce.strike_value == 40
-    assert any("EntryByPremium" in n for n in ce.notes)
-    assert any("EntryByPremium" in n for n in plan.all_notes())
+    assert ce.premium_selection == {"value_type": "NearestPremium", "value": 40, "cond": "Any", "max_depth": 15, "side": "BOTH"}
+    assert not ce.has_notes  # confirmed live - no caveat needed anymore
+
+
+def test_atm_leg_has_no_premium_selection():
+    strategy = _strategy(_definition(), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    assert plan.legs[0].premium_selection is None
 
 
 def test_nextleg_reentry_produces_idle_leg_plan_and_reference():
@@ -208,3 +213,7 @@ def test_real_file_builds_a_plan_for_every_strategy_with_notes_surfaced():
         # both parse to a strike_mode, never "UNKNOWN".
         for leg in plan.legs:
             assert leg.strike_mode != "UNKNOWN"
+            if leg.strike_mode == "PREMIUM":
+                assert leg.premium_selection["value_type"] == "NearestPremium"
+                assert leg.premium_selection["value"] == leg.strike_value
+                assert not leg.has_notes
