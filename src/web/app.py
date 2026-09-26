@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import functools
 import os
+import platform
 import re
 from datetime import datetime
 from pathlib import Path
@@ -1929,5 +1930,30 @@ def stop_basket_save() -> dict:
 def close_basket_save() -> dict:
     basket_save_state.close()
     return {"ok": True}
+
+
+@app.get("/api/platform")
+def get_platform() -> dict:
+    """Lets the frontend decide whether to show Windows-only controls (MTQuant
+    import) without guessing - see docs/mtquant-integration.md. Checking this
+    is how the UI avoids ever showing a "Save to MTQuant" button on macOS that
+    would just error when clicked."""
+    return {"os": platform.system(), "mtquant_available": platform.system() == "Windows"}
+
+
+@app.post("/api/mtquant/import")
+def mtquant_import() -> dict:
+    """Stub for the MTQuant .algtst import automation (src/mtquant/, not built
+    yet - see docs/mtquant-integration.md). Gated on Windows BEFORE src.mtquant
+    is ever imported, so a macOS session never needs the mtquant optional
+    dependency group (pywinauto) installed, or even importable."""
+    if platform.system() != "Windows":
+        raise HTTPException(
+            status_code=400,
+            detail="MTQuant integration is only available on Windows (this is a Windows desktop app, not a website).",
+        )
+    from src import mtquant  # noqa: F401  proves the lazy-import boundary holds; no pywinauto import happens yet
+
+    raise HTTPException(status_code=501, detail="MTQuant integration is not implemented yet.")
 
 

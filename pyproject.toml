@@ -11,6 +11,14 @@ dependencies = [
     "uvicorn[standard]>=0.29",
 ]
 
+[project.optional-dependencies]
+# Windows-only: the MTQuant desktop-app integration (src/mtquant/). Never
+# installed by a plain `uv sync` - see docs/mtquant-integration.md. Install
+# explicitly on Windows with `uv sync --extra mtquant`.
+mtquant = [
+    "pywinauto>=0.6.8",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
