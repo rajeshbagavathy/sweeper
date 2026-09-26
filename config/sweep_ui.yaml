@@ -1,4 +1,4 @@
-instrument: SENSEX
+instrument: NIFTY
 start_date: '2025-01-01'
 end_date: '2026-09-09'
 entry_time:
@@ -27,9 +27,9 @@ shared_leg:
     - OTM1
     use_closest_premium: true
     premium_range:
-      min: 100.0
-      max: 150.0
-      step: 25.0
+      min: 30.0
+      max: 50.0
+      step: 10.0
 legs:
 - action: SELL
   option_type: CE
@@ -157,6 +157,7 @@ slippage_pct: 1.0
 dte_values:
 - 0
 - 1
+- 2
 brokerage_rate: 20.0
 auto_download_enabled: true
 auto_download_min_return_max_dd: 1.5

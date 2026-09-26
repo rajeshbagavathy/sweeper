@@ -32,6 +32,10 @@ def _row(cid: str, instrument: str = "NIFTY", **extra) -> dict:
         # unless a test deliberately overrides it (pass stoploss_kind="" to omit).
         "stoploss.kind": "amount",
         "stoploss.value": "7000",
+        # Profitable by default (see _is_profitable) - so these tests aren't
+        # tripped up by the "net losing" exclusion unless a test deliberately
+        # overrides it (pass total_pnl="-1000" or similar).
+        "total_pnl": "1000",
     }
     row.update(extra)
     return row
@@ -116,6 +120,30 @@ def test_compute_correlation_excludes_combos_with_no_hard_stop_loss(monkeypatch,
     assert result["basket"] == []
     assert result["labels"] == {}
     assert result["excluded_no_stop_loss"] == [{"combo_id": "no_sl", "label": cs.label_for(rows[0])}]
+
+
+def test_compute_correlation_excludes_a_net_losing_combo(monkeypatch, tmp_path):
+    """Confirmed live: a combo that lost money overall (total_pnl <= 0) still
+    made it into a "Recommended diversified basket" and got saved to AlgoTest
+    as part of it - a ratio metric like Return/MaxDD can look fine even for a
+    losing strategy. Must be excluded outright, same treatment as no-Stop-Loss
+    rows, not just ranked last (pick_diversified_basket has no size cap, so a
+    merely-demoted loser could still slip in if it's uncorrelated enough)."""
+    monkeypatch.setattr(cs, "REPORTS_DIR", tmp_path)
+    dates = [(str(i + 1), f"2025-09-{(i % 28) + 1:02d}", "100") for i in range(6)]
+    _write_report(cs.trade_report_path(tmp_path, "NIFTY", "loser"), dates)
+    _write_report(cs.trade_report_path(tmp_path, "NIFTY", "winner"), dates)
+
+    rows = [
+        _row("loser", total_pnl="-50000", return_max_dd="9.0", reward_risk_ratio="5.0"),
+        _row("winner", total_pnl="1000", return_max_dd="0.1", reward_risk_ratio="0.1"),
+    ]
+    result = cs.compute_correlation(rows, threshold=0.9)
+
+    assert [b["combo_id"] for b in result["basket"]] == ["winner"]
+    assert result["excluded_not_profitable"] == [
+        {"combo_id": "loser", "label": cs.label_for(rows[0]), "total_pnl": "-50000"}
+    ]
 
 
 def test_compute_correlation_surfaces_data_gaps(monkeypatch, tmp_path):

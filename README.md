@@ -6,7 +6,9 @@ CSV. AlgoTest has no backtesting API, so this drives the rendered UI directly.
 A second page (Analyze Results) then works across any set of accumulated result
 CSVs: filtering/breakdown, uncorrelated-strategy basket building, multi-session
 portfolio construction, and CAS regime analysis. See `CLAUDE.md` for the fuller
-architecture/feature map and established conventions.
+architecture/feature map and established conventions - and, if you're moving
+this project to a new machine or adding a second site integration (e.g.
+MTQuant), see `docs/windows-migration.md` / `docs/mtquant-integration.md`.
 
 ## Setup
 
@@ -89,15 +91,9 @@ selector and update `config/selectors.yaml` by hand.
 
 ## Known follow-ups
 
-- `login.email_input`/`password_input`/`submit_button` are still blank - fine as long
-  as `.browser-profile`'s session stays alive, but there's no auto re-login if it
-  expires mid-sweep.
 - `results.error_marker` has one confirmed false-positive fixed (Next.js's route
   announcer) but hasn't been checked against a genuine AlgoTest error yet.
 - `builder.reentry_count`/`reentry_type` are unexercised - not wired into the web UI or
   the default `sweep.yaml`.
-- `config/sweep_ui.yaml`'s saved Underlying % Stop Loss range (15-20) predates the
-  1% sanity cap and now silently contributes zero combos to any sweep - re-enter a
-  sane value (e.g. 0.14-0.25) through the UI.
 - See `CLAUDE.md`'s "Known stale/open items" for the rest (an old un-cleaned
-  DTE-combining data issue).
+  DTE-combining data issue, and a leftover stale range in `config/sweep_ui.yaml`).

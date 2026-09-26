@@ -133,6 +133,13 @@ def label_for(row: dict[str, Any]) -> str:
     return " | ".join(parts)
 
 
+def _is_profitable(row: dict[str, Any]) -> bool:
+    try:
+        return float(row.get("total_pnl", "")) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def compute_correlation(rows: list[dict[str, Any]], *, threshold: float = DEFAULT_CORR_THRESHOLD) -> dict[str, Any]:
     """Pure/synchronous: correlate whatever's ALREADY on disk for `rows` right now -
     does no replaying or downloading itself (see CorrelateState for that, a separate
@@ -142,9 +149,26 @@ def compute_correlation(rows: list[dict[str, Any]], *, threshold: float = DEFAUL
     Stop Loss at all (leg-level or overall) - reported in `excluded_no_stop_loss`
     rather than silently ranked, since Trail SL alone leaves the position with
     nothing capping its loss before the trail has locked anything in (see
-    has_hard_stop_loss in src/web/portfolio.py, which this reuses directly)."""
+    has_hard_stop_loss in src/web/portfolio.py, which this reuses directly).
+
+    A net-LOSING combo (total_pnl <= 0 in its own backtest) is excluded the same
+    way, in `excluded_not_profitable` - not just ranked last. Confirmed live: a
+    combo with total_pnl of -50,000+ still made it into a "Recommended
+    diversified basket" (and got saved to AlgoTest as part of it) here, because
+    nothing before this filtered on profitability at all - a ratio metric like
+    Return/MaxDD can score deceptively well for a strategy that lost money
+    overall (see narrow.profitability_gated_key's own docstring), and even
+    ranking it last wouldn't be a hard guarantee: pick_diversified_basket has no
+    size cap here, so a demoted loser that happened to be genuinely uncorrelated
+    with every profitable pick above it could still slip in. Matches every other
+    ranking path in this codebase (src/web/app.py's Results sort, src/web/
+    narrow.py's own, src/web/portfolio.py's/regime_state.py's shortlist step),
+    which all treat profitability as a hard prerequisite, not one more weighted
+    ingredient - this was the one gap."""
     excluded_no_sl = [r for r in rows if not has_hard_stop_loss(r)]
-    eligible_rows = [r for r in rows if has_hard_stop_loss(r)]
+    hard_sl_rows = [r for r in rows if has_hard_stop_loss(r)]
+    excluded_not_profitable = [r for r in hard_sl_rows if not _is_profitable(r)]
+    eligible_rows = [r for r in hard_sl_rows if _is_profitable(r)]
 
     row_by_id = {r.get("combo_id"): r for r in eligible_rows}
     series: dict[str, dict[str, float]] = {}
@@ -188,6 +212,10 @@ def compute_correlation(rows: list[dict[str, Any]], *, threshold: float = DEFAUL
         "missing": [{"combo_id": cid, "label": label_for(row_by_id[cid])} for cid in missing],
         "excluded_no_stop_loss": [
             {"combo_id": r.get("combo_id"), "label": label_for(r)} for r in excluded_no_sl
+        ],
+        "excluded_not_profitable": [
+            {"combo_id": r.get("combo_id"), "label": label_for(r), "total_pnl": r.get("total_pnl")}
+            for r in excluded_not_profitable
         ],
         "data_gaps": data_coverage_gaps(eligible_rows, REPORTS_DIR),
         "threshold": threshold,

@@ -534,6 +534,7 @@ def _correlate_top_rows(
     instrument: str | None, rmdd_weight: float, csv_file: list[str] | None = None,
     entry_time_from: str | None = None, entry_time_to: str | None = None,
     exit_time: str | None = None, exit_time_from: str | None = None, exit_time_to: str | None = None,
+    date_range: str | None = None, date_from: str | None = None, date_to: str | None = None,
 ) -> list[dict]:
     """The exact top-N rows the results grid is showing right now (same params as
     /api/results, or /api/analyze/results when `csv_file` is given) - shared by both
@@ -543,7 +544,18 @@ def _correlate_top_rows(
     `csv_file` lets this follow a *loaded saved execution* instead of whatever the
     live run_state happens to hold - without it, Correlate silently kept acting on
     the last-active run's CSV even after loading a different execution in the UI,
-    which looked like it was "downloading the wrong trades.\""""
+    which looked like it was "downloading the wrong trades."
+
+    `date_range`/`date_from`/`date_to` - the same Backtest-period/date-range filter
+    active on the page above - used to be silently dropped here (neither /api/
+    correlate/download nor /api/correlate/compute even declared these params, so
+    FastAPI discarded them even though the frontend sent them): confirmed live,
+    a "since 2026-08-01" filter had zero effect on which candidates Uncorrelated
+    strategies actually downloaded/correlated - the top-N pool was drawn from the
+    ENTIRE loaded file(s), so a basket built and saved under that filter could be
+    dominated by older, no-longer-representative combos and then genuinely
+    underperform when judged against the filtered window it was supposed to be
+    scoped to."""
     if csv_file:
         paths = [Path(p) for p in csv_file]
         missing = [str(p) for p in paths if not p.exists()]
@@ -565,6 +577,7 @@ def _correlate_top_rows(
         dte=dte, instrument=instrument, rmdd_weight=rmdd_weight,
         entry_time_from=entry_time_from, entry_time_to=entry_time_to, exit_time=exit_time,
         exit_time_from=exit_time_from, exit_time_to=exit_time_to,
+        date_range=date_range, date_from=date_from, date_to=date_to,
     )
     return filtered["rows"]
 
@@ -584,6 +597,9 @@ def download_correlate_reports(
     exit_time: str | None = None,
     exit_time_from: str | None = None,
     exit_time_to: str | None = None,
+    date_range: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     force: bool = False,
     parallelism: int | None = None,
     parallelism_account2: int | None = None,
@@ -610,6 +626,7 @@ def download_correlate_reports(
     rows = _correlate_top_rows(
         top_n, interval, bucket, sort_by, dte, instrument, rmdd_weight, csv_file or None,
         entry_time_from, entry_time_to, exit_time, exit_time_from, exit_time_to,
+        date_range, date_from, date_to,
     )
     # Same resolution _correlate_top_rows itself uses internally - needed here too
     # so a forced merge knows which file(s) to write the refreshed rows back into.
@@ -720,6 +737,9 @@ def compute_correlate(
     exit_time: str | None = None,
     exit_time_from: str | None = None,
     exit_time_to: str | None = None,
+    date_range: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> dict:
     """Step 2: correlate whatever's already on disk for the current top `top_n` rows
     right now - pure computation, no replaying/downloading. Rows with no cached report
@@ -727,6 +747,7 @@ def compute_correlate(
     rows = _correlate_top_rows(
         top_n, interval, bucket, sort_by, dte, instrument, rmdd_weight, csv_file or None,
         entry_time_from, entry_time_to, exit_time, exit_time_from, exit_time_to,
+        date_range, date_from, date_to,
     )
     return compute_correlation(rows, threshold=threshold)
 
