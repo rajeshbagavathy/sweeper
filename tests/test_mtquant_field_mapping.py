@@ -143,6 +143,32 @@ def test_atcost_reentry_carries_count():
     assert plan.legs[0].reentry_count == 1
 
 
+def test_percentage_down_momentum_maps_to_negative_percent_wait_trade():
+    leg = _leg("leg1", "CE", "StrikeType.ATM", LegMomentum={"Type": "MomentumType.PercentageDown", "Value": 5})
+    strategy = _strategy(_definition(ListOfLegConfigs=[leg, _leg("leg2", "PE", "StrikeType.ATM")]), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    ce = plan.legs[0]
+    assert ce.wait_trade == "-5%"
+    assert not ce.has_notes  # PercentageDown is the doc-confirmed case - no caveat needed
+
+
+def test_underlying_points_down_momentum_maps_to_negative_points_wait_trade():
+    leg = _leg("leg1", "CE", "StrikeType.ATM", LegMomentum={"Type": "MomentumType.UnderlyingPointsDown", "Value": 20})
+    strategy = _strategy(_definition(ListOfLegConfigs=[leg, _leg("leg2", "PE", "StrikeType.ATM")]), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    assert plan.legs[0].wait_trade == "-20"
+
+
+def test_underlying_points_up_momentum_flags_unconfirmed_sign_convention():
+    leg = _leg("leg1", "CE", "StrikeType.ATM", LegMomentum={"Type": "MomentumType.UnderlyingPointsUp", "Value": 20})
+    strategy = _strategy(_definition(ListOfLegConfigs=[leg, _leg("leg2", "PE", "StrikeType.ATM")]), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    ce = plan.legs[0]
+    assert ce.wait_trade == "+20"
+    assert ce.has_notes
+    assert any("inferred by symmetry" in n for n in ce.notes)
+
+
 def test_unsupported_overall_sl_type_is_flagged_not_silently_passed_through():
     strategy = _strategy(_definition(OverallSL={"Type": "OverallTgtSLType.SomethingNew", "Value": 5}), _item("1"))
     plan = build_portfolio_plan(strategy)

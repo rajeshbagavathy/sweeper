@@ -6,27 +6,55 @@ session). automation.py (not built yet) is the only thing that should know
 how to actually click/type these into the app; this module only decides
 *what* the values are.
 
-Mapping confidence, worked out by hand against the live app:
+Mapping confidence - live UI exploration (2026-09-26) plus mtQuant's own
+help doc (opened via the dialog's "Help" link -> a Google Doc; fetched and
+cross-checked, not just eyeballed):
+
 - CONFIRMED: Symbol, Expiry, Underlying (Spot/Future), per-leg CE/PE, B/S,
-  Lots, Expiry, ATM/OTM/ITM strike notation, per-leg Stoploss %, per-leg
-  Trail SL (Points), Run On Days, DTE, Start Time, Overall SL/Target (MTM),
-  Overall Trailing Target ("For Every Increase In Profit By"/"Trail Profit
-  By"), Lock-and-trail ("If Profit Reaches"/"Lock Minimum Profit At"),
-  Move SL to Cost, re-entry EXISTS as ReEntry (AtCost) vs ReExecute
-  (NextLeg) on the ReExecute tab.
-- NOT YET CONFIRMED (flagged in `notes`/`LegPlan.notes` instead of guessed):
-  the exact Strike Selection UI path for EntryByPremium legs (numeric
-  premium, not ATM/OTM/ITM); whether AlgoTest's ExitIndicators time maps to
-  mtQuant's "End Time" or "SqOff Time" (or both); the exact per-leg wiring
-  of ReExecute's "OnSL/OnTarget ReExecute Count" and "SL Portfolio
-  Name/Count" fields for multi-leg NextLeg cases; where
-  SquareOffAllLegs/ReentryTimeRestriction/MaxPositionInADay/
-  SkipInitialCandles live in the dialog (Exit Settings / Other Settings /
-  Monitoring tabs were seen to exist but not opened yet); and whether
-  "Wait & Trade" is really the right field for AlgoTest's per-leg Momentum.
-  None of these are guessed at - automating past a flagged note without
-  resolving it first would risk silently building a wrong strategy, which
-  is worse than not building it at all.
+  Lots, Expiry, ATM/OTM/ITM strike notation, per-leg Trail SL (Points; the
+  doc confirms the two values are "profit increase threshold" / "trail
+  amount", matching InstrumentMove/StopLossMove exactly), Run On Days, DTE,
+  Start Time, Overall SL/Target (MTM), Overall Trailing Target ("For Every
+  Increase In Profit By"/"Trail Profit By"), Lock-and-trail ("If Profit
+  Reaches"/"Lock Minimum Profit At"), Move SL to Cost, re-entry EXISTS as
+  ReEntry (AtCost: "re-enter when price re-crosses the original avg traded
+  price") vs ReExecuteLeg (NextLeg: "exact copy, executed per the original
+  leg's own settings") on the ReExecute tab.
+- CONFIRMED BUT CORRECTED from an earlier wrong live-test conclusion this
+  same session: a bare number typed into the leg grid's Strike column is an
+  ABSOLUTE STRIKE PRICE (mtQuant's own doc: "typing '17500' selects the
+  17500 strike... interpreted as the literal strike level"), NOT a premium
+  value. An earlier test that typed "40" into that field and saw it accepted
+  without error was misleading - it silently set strike=40, not "enter at
+  premium 40". EntryByPremium must instead go through the dedicated
+  "Premium / Greek Legs" sub-form (Value Type=Premium/NearestPremium, a
+  "Between" range, Max Depth, Side=ITM/OTM/Both) - see the still-open item
+  below.
+- CONFIRMED: per-leg Stoploss/Target "type" choices are Premium (% or
+  points off entry premium - this is what AlgoTest's LegStopLoss type
+  "Percentage" maps to), AbsolutePremium (a literal price, no math),
+  Underlying, Strike, and Delta/Theta (raw Greek thresholds).
+- CONFIRMED: "Wait & Trade" delays order placement past the entry trigger
+  until price moves a further signed amount ("-1%" = wait for a further 1%
+  drop) - this is exactly AlgoTest's per-leg Momentum
+  (PercentageDown/UnderlyingPointsUp/Down), not a guess anymore.
+- STILL OPEN (flagged in `notes`/`LegPlan.notes`, not guessed): the exact
+  live UI location of the "Premium / Greek Legs" sub-form (Value
+  Type/Between/Max Depth/Side) - ticking the checkbox and clicking Add Leg
+  produced an ordinary leg row in this session's live test, not the
+  documented sub-form, and the leg grid turned out to be a separately
+  UI-Automation-invisible control (not enumerable via the standard tree
+  walk the rest of this dialog was mapped with), so this needs a fresh
+  targeted pass, not a repeat of the same steps; whether AlgoTest's
+  ExitIndicators time maps to mtQuant's "End Time" or "SqOff Time" (or
+  both); the exact per-leg wiring of ReExecute's "OnSL/OnTarget ReExecute
+  Count" and "SL Portfolio Name/Count" fields for multi-leg NextLeg cases;
+  and where SquareOffAllLegs/ReentryTimeRestriction/MaxPositionInADay/
+  SkipInitialCandles live, if anywhere - mtQuant's own doc doesn't name an
+  explicit equivalent for any of these. Not a blocker for the user's actual
+  14-strategy file though: every one of those four fields sits at its
+  trivial/default value (0/False/1/None) across all 14 real strategies, so
+  nothing there is actually lost by leaving them unmapped for now.
 """
 
 from __future__ import annotations
@@ -50,6 +78,26 @@ def _run_on_days(weekdays: dict[str, bool]) -> list[str]:
     return [day.capitalize() for day in _WEEKDAY_ORDER if weekdays.get(day)]
 
 
+def _momentum_to_wait_trade(momentum: dict) -> tuple[str | None, str | None]:
+    """Translates AlgoTest's LegMomentum into mtQuant's "Wait & Trade" value
+    (a signed percentage or points - see mtQuant's own doc: "-1%" means wait
+    for a further 1% adverse move past the trigger before actually entering).
+    Only the PercentageDown case is confirmed against a worked example in
+    that doc; the "Up" sign convention is inferred by symmetry, not
+    independently confirmed, so it's flagged rather than trusted silently.
+    """
+    kind, value = momentum["type"], momentum["value"]
+    if kind == "PercentageDown":
+        return f"-{value}%", None
+    if kind == "PercentageUp":
+        return f"+{value}%", "PercentageUp sign convention inferred by symmetry with the doc's PercentageDown example, not independently confirmed"
+    if kind == "UnderlyingPointsDown":
+        return f"-{value}", None
+    if kind == "UnderlyingPointsUp":
+        return f"+{value}", "UnderlyingPointsUp sign convention inferred by symmetry with the doc's PercentageDown example, not independently confirmed"
+    return None, f"unrecognized Momentum type {kind!r} - not mapped to Wait & Trade"
+
+
 @dataclass
 class LegPlan:
     leg_id: str
@@ -62,7 +110,7 @@ class LegPlan:
     stoploss_pct: float | None
     target_value: float | None
     trail_sl: dict | None  # {"instrument_move": ..., "stoploss_move": ...} | None
-    momentum: dict | None  # raw normalized momentum, if any - see module docstring caveat
+    wait_trade: str | None  # mtQuant's signed "Wait & Trade" value (e.g. "-5%"), translated from Momentum
     idle: bool  # True => add via the leg grid's "Idle" checkbox, not a live leg
     reentry_kind: str | None  # "AtCost" | "NextLeg" | None
     reentry_count: int | None  # for AtCost
@@ -79,7 +127,12 @@ class LegPlan:
         elif leg.entry_type == "EntryByPremium":
             strike_mode = "PREMIUM"
             strike_value = leg.strike_parameter
-            notes.append("EntryByPremium: exact mtQuant Strike Selection UI path for a numeric premium not yet confirmed live")
+            notes.append(
+                f"EntryByPremium (target premium {leg.strike_parameter}): confirmed this does NOT go in the plain "
+                "Strike column (that's an absolute strike price in mtQuant, per its own docs) - it needs the "
+                "'Premium / Greek Legs' sub-form (Value Type=Premium, a Between range, Max Depth, Side). Live UI "
+                "location of that sub-form not yet found; a Between-range tolerance policy also needs deciding."
+            )
         else:
             strike_mode = "UNKNOWN"
             strike_value = leg.strike_parameter
@@ -107,10 +160,11 @@ class LegPlan:
             else:
                 notes.append(f"leg trail SL type {leg.trail_sl['type']!r} isn't Points - not auto-mapped")
 
-        momentum = None
+        wait_trade = None
         if leg.momentum:
-            momentum = leg.momentum
-            notes.append("has Momentum - mapping to mtQuant's 'Wait & Trade' column is a strong candidate but not yet confirmed live")
+            wait_trade, momentum_note = _momentum_to_wait_trade(leg.momentum)
+            if momentum_note:
+                notes.append(momentum_note)
 
         reentry_kind = reentry_count = reentry_target_leg_id = None
         if leg.reentry_sl:
@@ -136,7 +190,7 @@ class LegPlan:
             stoploss_pct=stoploss_pct,
             target_value=target_value,
             trail_sl=trail_sl,
-            momentum=momentum,
+            wait_trade=wait_trade,
             idle=idle,
             reentry_kind=reentry_kind,
             reentry_count=reentry_count,
