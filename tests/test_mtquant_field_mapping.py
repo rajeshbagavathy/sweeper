@@ -92,7 +92,7 @@ def test_plain_atm_straddle_maps_cleanly():
     assert plan.dte == [1]
     assert plan.run_on_days == ["Monday", "Tuesday", "Thursday", "Friday"]  # wed/sat/sun excluded
     assert plan.start_time == "09:37:00"
-    assert plan.exit_time == "14:45:00"
+    assert plan.sqoff_time == "14:45:00"
     assert plan.overall_stoploss == {"type": "MTM", "value": 600}
     assert plan.move_sl_to_cost is False
     assert not plan.has_notes

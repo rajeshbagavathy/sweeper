@@ -50,20 +50,46 @@ cross-checked, not just eyeballed):
   until price moves a further signed amount ("-1%" = wait for a further 1%
   drop) - this is exactly AlgoTest's per-leg Momentum
   (PercentageDown/UnderlyingPointsUp/Down), not a guess anymore.
-- STILL OPEN (flagged in `notes`/`LegPlan.notes`, not guessed): the leg
-  grid turned out to be a UI-Automation-invisible control (not enumerable
-  via the standard tree walk the rest of this dialog was mapped with), so
-  automation.py will need coordinate/image-based interaction for the leg
-  grid specifically, unlike the rest of this dialog; whether AlgoTest's
-  ExitIndicators time maps to mtQuant's "End Time" or "SqOff Time" (or
-  both); the exact per-leg wiring of ReExecute's "OnSL/OnTarget ReExecute
-  Count" and "SL Portfolio Name/Count" fields for multi-leg NextLeg cases;
-  and where SquareOffAllLegs/ReentryTimeRestriction/MaxPositionInADay/
-  SkipInitialCandles live, if anywhere - mtQuant's own doc doesn't name an
-  explicit equivalent for any of these. Not a blocker for the user's actual
-  14-strategy file though: every one of those four fields sits at its
-  trivial/default value (0/False/1/None) across all 14 real strategies, so
-  nothing there is actually lost by leaving them unmapped for now.
+- CONFIRMED (user's own explanation): mtQuant's "End Time" is only needed
+  when the portfolio's ENTRY itself is conditional (e.g. an underlying
+  breakout) - End Time then bounds how long that condition is watched for.
+  AlgoTest's entries here are all plain clock-time triggers (a single
+  TimeIndicator, nothing conditional - see algtst_parser's `_extract_time`),
+  so End Time is never needed for this file: ExitIndicators maps to SqOff
+  Time alone, which force-exits every leg at that clock time. MTQuantPortfolioPlan
+  intentionally has no separate `end_time` field for this reason.
+- EXPLAINED (not a gap, just no explicit field needed): SquareOffAllLegs/
+  ReentryTimeRestriction/MaxPositionInADay/SkipInitialCandles have no named
+  mtQuant field because mtQuant's own default behavior already matches what
+  each one describes at the value it holds across all 14 real strategies:
+  SquareOffAllLegs=False already matches mtQuant's default of exiting each
+  leg independently on its own SL/Target rather than forcing them together
+  (SqOff Time is the only "square off everything together" trigger, and
+  that's handled separately via the Exit Settings tab's own "Exit Sell Legs
+  First" ordering, not a per-portfolio all-or-nothing toggle);
+  ReentryTimeRestriction=None needs no restriction to configure;
+  MaxPositionInADay=1 is just describing "enter once", which is the
+  unconfigured default; SkipInitialCandles=0 needs no delay-before-entry
+  setting. None of these would change what gets built.
+- LOCATED BUT NOT YET EXERCISED LIVE: the leg grid's "On Stoploss" dropdown
+  and "SL Portfolio Name/Count" field (visible in a screenshot the user
+  shared of the live grid) are almost certainly where per-leg AtCost/
+  NextLeg re-entry actually gets wired (mirroring "On Target"/"Tgt
+  Portfolio Name/Count" for the target-side case) - not yet clicked
+  through, needed before automation.py can build strategy #10 specifically
+  (the one real strategy using NextLeg/idle legs - unrelated to leg COUNT,
+  it's just strategy id "10"; nothing in this file has anywhere near 10
+  actual legs). Also confirmed via that screenshot: the grid's unused
+  columns (Hedge Req $, Trail TGT, SL Wait, per-leg Day From Start/Start
+  Time, Spread Limit) have no counterpart in any of the 14 real strategies
+  (AlgoTest's own LegTarget is always type "None" there, so Trail TGT is
+  moot; entries are never staggered per-leg) - nothing is silently missing
+  by leaving those blank.
+- STILL OPEN: the leg grid turned out to be a UI-Automation-invisible
+  control (not enumerable via the standard tree walk the rest of this
+  dialog was mapped with), so automation.py will need coordinate/
+  image-based interaction for the leg grid specifically, unlike the rest
+  of this dialog.
 """
 
 from __future__ import annotations
@@ -242,7 +268,7 @@ class MTQuantPortfolioPlan:
     dte: list[int]
     run_on_days: list[str]
     start_time: str | None
-    exit_time: str | None  # see module docstring: End Time vs SqOff Time still unconfirmed
+    sqoff_time: str | None  # AlgoTest's ExitIndicators - confirmed maps to mtQuant's SqOff Time, not End Time (see module docstring)
     legs: list[LegPlan]  # live legs, in ListOfLegConfigs order
     idle_legs: list[LegPlan]  # promoted only via a NextLeg re-entry
     overall_stoploss: dict | None
@@ -275,19 +301,23 @@ def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
         notes.append(f"StrategyType {strategy.strategy_type!r} isn't IntradaySameDay - not exercised live yet")
 
     if strategy.exit_time is None and strategy.entry_time is not None:
-        notes.append("exit time missing/unmapped but entry time present - see parser notes above")
+        notes.append("sqoff time missing/unmapped but entry time present - see parser notes above")
 
     live_legs = [LegPlan.from_algtst_leg(leg, idle=False) for leg in strategy.legs]
     idle_legs = [LegPlan.from_algtst_leg(leg, idle=True) for leg in strategy.idle_legs.values()]
 
+    # These four have no named mtQuant field (confirmed via its own doc) because mtQuant's
+    # default behavior already matches them AT THEIR DEFAULT VALUE (see module docstring) -
+    # only flagged here when a strategy actually asks for the non-default behavior, which
+    # would need real UI investigation this session never did.
     if strategy.max_positions_per_day not in (None, 1):
-        notes.append(f"MaxPositionInADay={strategy.max_positions_per_day} (not 1) - mtQuant field location not yet confirmed")
+        notes.append(f"MaxPositionInADay={strategy.max_positions_per_day} (not 1): mtQuant equivalent not investigated - defaults to unmapped")
     if strategy.skip_initial_candles:
-        notes.append(f"SkipInitialCandles={strategy.skip_initial_candles} - mtQuant field location not yet confirmed")
+        notes.append(f"SkipInitialCandles={strategy.skip_initial_candles}: mtQuant equivalent not investigated - defaults to unmapped")
     if strategy.square_off_all_legs:
-        notes.append("SquareOffAllLegs=True - mtQuant field location not yet confirmed (Exit Settings tab, unopened)")
+        notes.append("SquareOffAllLegs=True: mtQuant equivalent not investigated (Exit Settings tab's per-leg-independent default is what's confirmed, not this)")
     if strategy.reentry_time_restriction:
-        notes.append(f"ReentryTimeRestriction={strategy.reentry_time_restriction!r} - mtQuant field location not yet confirmed")
+        notes.append(f"ReentryTimeRestriction={strategy.reentry_time_restriction!r}: mtQuant equivalent not investigated - defaults to unmapped")
 
     default_lots = strategy.multiplier
     if default_lots is None:
@@ -303,7 +333,7 @@ def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
         dte=strategy.dte,
         run_on_days=_run_on_days(strategy.weekdays),
         start_time=_format_time(strategy.entry_time),
-        exit_time=_format_time(strategy.exit_time),
+        sqoff_time=_format_time(strategy.exit_time),
         legs=live_legs,
         idle_legs=idle_legs,
         overall_stoploss=strategy.overall_sl,
