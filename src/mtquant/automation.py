@@ -24,13 +24,23 @@ Interaction strategy, confirmed live against the running app (2026-09-27):
   list - confirmed live) - calibrated against the combo's own live
   rectangle (never a hardcoded absolute position), using a measured
   ~27.5px row height. See `_select_dropdown_option`.
-- The leg grid itself is a genuinely separate, UI-Automation-invisible
-  control (no Row0/Row1 children appear in the tree the way they do for
-  the Multi-Leg tab's own summary grid) - it needs coordinate-based
-  interaction, calibrated against the dialog's OWN rectangle (never
-  hardcoded absolute screen coordinates) so it survives the dialog
-  appearing at a different screen position. NOT YET IMPLEMENTED in this
-  module - see build_portfolio()'s docstring for what's done vs. open.
+- CORRECTED mid-session: the leg grid is NOT UI-Automation-invisible after
+  all - that was true of the Multi-Leg tab's own SUMMARY grid (a different
+  control entirely, checked before any leg row existed), but the ACTIVE
+  row of THIS grid (the one currently being edited, before Enter commits
+  it) exposes real auto_id'd controls: btnBuySell, btnCEPE (toggle
+  buttons - one click flips Buy<->Sell or CE<->PE, confirmed live),
+  nmLots (Spinner), cboStrike, cboSLType, cboTargetType (ComboBoxes -
+  same coordinate-click selection as other dropdowns), txtSL, txtTgt,
+  txtWT, txtSLWait, txtSpread (Edit), chkIdle, chkHedgeReq (CheckBox).
+  Only revealed once a leg actually exists (click btnAdd first) and, for
+  Trail SL/TGT, only once a Stoploss/Target type is actually chosen (the
+  cboSLTrailing/cboTargetTrailing combos and their "N~M" popups don't
+  exist in the tree before that - same dynamic-field-reveal pattern seen
+  elsewhere in this dialog). The Trail SL popup's own two number fields
+  and confirm/cancel buttons are NOT UI-Automation-addressable (same as
+  every other popup in this app) - coordinate-clicked, calibrated against
+  the triggering combo's own rectangle.
 
 AlgoTest-value -> mtQuant-dropdown-option translation table (confirmed
 live, not assumed):
@@ -85,6 +95,22 @@ COMBINED_SL_TYPE_OPTIONS = [
 # option text. Only MTM has been seen in real data / confirmed live; anything
 # else raises rather than guessing at an untested mapping.
 OVERALL_SL_TYPE_MAP = {"MTM": "CombinedLoss"}
+
+# A leg row's cboSLType full option list, confirmed live the same way as
+# COMBINED_SL_TYPE_OPTIONS above (this is a DIFFERENT, shorter list - the
+# leg-level and portfolio-level Stoploss Type dropdowns are not the same
+# control despite the similar name).
+LEG_SL_TYPE_OPTIONS = ["None", "Premium", "Underlying", "Strike", "AbsolutePremium", "Delta", "Theta"]
+
+# AlgoTest's per-leg LegStopLoss "type" string -> mtQuant's leg-level
+# dropdown option. Only Percentage has been seen in real data / confirmed
+# live (every leg in the user's actual file uses it).
+LEG_SL_TYPE_MAP = {"Percentage": "Premium"}
+
+# The Strike column's "Premium / Greek Legs" sub-form's Value Type options,
+# confirmed live (see field_mapping.py's build_premium_selection - this list
+# is the same one that discovery was based on).
+STRIKE_VALUE_TYPE_OPTIONS = ["Premium", "NearestPremium", "Delta", "IV", "Theta", "NearestDelta", "NearestStraddlePremium"]
 
 # Empirically measured from the live app (2026-09-27): a dropdown's first
 # item's vertical center sits this many pixels below the combo's own
@@ -356,12 +382,174 @@ class PortfolioDialog:
             chk.click_input()
             time.sleep(0.2)
 
-    # ---- Not yet implemented ----
-    # Leg grid (Add Leg, B/S, CE/PE, Lots, Strike incl. the NearestPremium
-    # sub-form, Stoploss/Target/Trail SL/Wait & Trade, per-leg re-entry via
-    # "On Stoploss"/"SL Portfolio Name/Count"), Execution Parameters tab's
-    # DTE-vs-RunOnDays mode radio, and the final Save click are all still
-    # open - see build_portfolio()'s docstring.
+    # ---- Leg grid - CONFIRMED WORKING FOR THE FIRST LEG ADDED TO A FRESH
+    # DIALOG ONLY. See module docstring for which controls this relies on.
+    #
+    # OPEN BLOCKER, not guessed past: a SECOND (or later) leg row does not
+    # expose the same auto_id'd controls that the first row does, even
+    # while visually active/being edited - confirmed by scanning
+    # descendants() for cboStrike after adding a second row: zero matches,
+    # where the first row reliably gave exactly one. Tried the on-screen
+    # hint "PRESS ENTER TO SAVE THE ROW" as a way to commit row 1 before
+    # adding row 2 - this produced inconsistent results live (row 1's B/S
+    # reverted from Sell back to Buy, and both rows' Strike fields went
+    # empty), so it is NOT what these methods do. Building a strategy needs
+    # 2+ legs in every one of the user's real strategies, so this blocks
+    # `build_portfolio()` from filling more than one leg until the correct
+    # multi-leg workflow is confirmed - ask the user how they normally add
+    # a second leg in the app (a specific button/key to finish a row
+    # before starting the next?) rather than guessing further at this.
+
+    def add_leg(self) -> None:
+        """Clicks "Add Leg", creating a new row - Buy/CE/1 lot/Weekly/ATM by
+        default. Only confirmed reliable for the FIRST leg in a fresh
+        dialog - see the blocker note above."""
+        self._field("btnAdd", "Button").click_input()
+        time.sleep(0.5)
+
+    def set_leg_buy_sell(self, side: str) -> None:
+        """`side`: "Buy" | "Sell". One click on the toggle button flips it;
+        checks the button's current text first so this is idempotent."""
+        btn = self._field("btnBuySell", "Button")
+        if btn.window_text().strip().lower() != side.lower():
+            btn.click_input()
+            time.sleep(0.3)
+
+    def set_leg_ce_pe(self, kind: str) -> None:
+        """`kind`: "CE" | "PE". Same idempotent toggle-button pattern as
+        set_leg_buy_sell."""
+        btn = self._field("btnCEPE", "Button")
+        if btn.window_text().strip().upper() != kind.upper():
+            btn.click_input()
+            time.sleep(0.3)
+
+    def set_leg_lots(self, lots: int) -> None:
+        _set_edit_text(self._field("nmLots"), lots)
+
+    def set_leg_strike_relative(self, label: str) -> None:
+        """`label` like "ATM", "OTM2", "ITM1" - typed directly into the
+        Strike combo's own text portion (NOT its chevron, which instead
+        opens either the Premium/Greek Legs sub-form or a plain ATM-offset
+        picker depending on chkPremiumGreekLeg's state at leg-creation time
+        - see set_leg_strike_premium). ATM is this field's own default for
+        a freshly-added leg, so this only needs calling for a non-ATM
+        relative strike - untested for OTM/ITM specifically (no strategy in
+        the user's real file uses them), flagged rather than assumed to
+        definitely work.
+        """
+        combo = self._field("cboStrike", "ComboBox")
+        rect = combo.rectangle()
+        mouse_click(button="left", coords=(rect.left + 30, (rect.top + rect.bottom) // 2))
+        time.sleep(0.2)
+        send_keys("^a")
+        time.sleep(0.1)
+        send_keys(label, with_spaces=True)
+        time.sleep(0.1)
+        send_keys("{TAB}")
+        time.sleep(0.2)
+
+    def set_leg_strike_premium(self, target_premium) -> None:
+        """Opens the Strike column's "Premium / Greek Legs" sub-form (via
+        its chevron) and sets Value Type=NearestPremium, Value=
+        target_premium, leaving Cond ("Any"), Max Depth (15) and Side
+        (BOTH) at their own defaults - see field_mapping.py's
+        build_premium_selection for why NearestPremium with no range is
+        the right choice for AlgoTest's EntryByPremium.
+
+        REQUIRES chkPremiumGreekLeg to already be ticked at the time this
+        leg was added via add_leg() - confirmed live that the sub-form
+        vs. plain ATM-offset-picker choice is locked in at leg-CREATION
+        time and does NOT change retroactively if the checkbox is ticked
+        after the fact. This method does not tick the checkbox itself -
+        callers must do that before add_leg().
+        """
+        combo = self._field("cboStrike", "ComboBox")
+        rect = combo.rectangle()
+        mouse_click(button="left", coords=(rect.right - 8, (rect.top + rect.bottom) // 2))
+        time.sleep(0.6)
+
+        # Sub-form opens directly below the combo, left-aligned with it.
+        # Value Type's own chevron and NearestPremium's row position,
+        # measured live against this exact combo (2026-09-27).
+        vt_chevron_x = rect.left + 350
+        vt_chevron_y = rect.bottom + 15
+        mouse_click(button="left", coords=(vt_chevron_x, vt_chevron_y))
+        time.sleep(0.5)
+        index = STRIKE_VALUE_TYPE_OPTIONS.index("NearestPremium")
+        mouse_click(
+            button="left",
+            coords=(rect.left + 30, int(vt_chevron_y + DROPDOWN_FIRST_ITEM_OFFSET + index * DROPDOWN_ROW_HEIGHT)),
+        )
+        time.sleep(0.4)
+
+        # Value field: same row as Value Type, one field-row below it.
+        mouse_click(button="left", coords=(rect.left + 30, rect.bottom + 62))
+        time.sleep(0.2)
+        send_keys("^a")
+        time.sleep(0.1)
+        send_keys(str(target_premium), with_spaces=True)
+        time.sleep(0.2)
+        # Click elsewhere on the dialog to commit + close the popup - Enter
+        # was confirmed live to REVERT the value instead of committing it
+        # (see field_mapping.py's module docstring), so this deliberately
+        # does not press Enter here.
+        dlg_rect = self.dlg.rectangle()
+        mouse_click(button="left", coords=(dlg_rect.left + 50, dlg_rect.top + 50))
+        time.sleep(0.3)
+
+    def set_leg_stoploss_premium(self, value) -> None:
+        """Sets the leg's Stoploss Type to "Premium" (AlgoTest's
+        "Percentage" type - see LEG_SL_TYPE_MAP) and its value."""
+        combo = self._field("cboSLType", "ComboBox")
+        _select_dropdown_option(combo, LEG_SL_TYPE_OPTIONS, LEG_SL_TYPE_MAP["Percentage"])
+        _set_edit_text(self._field("txtSL", "Edit"), value)
+
+    def set_leg_wait_trade(self, value: str) -> None:
+        _set_edit_text(self._field("txtWT", "Edit"), value)
+
+    def set_leg_idle(self, idle: bool) -> None:
+        chk = self._field("chkIdle", "CheckBox")
+        is_checked = bool(chk.get_toggle_state()) if hasattr(chk, "get_toggle_state") else None
+        if is_checked != idle:
+            chk.click_input()
+            time.sleep(0.2)
+
+    def set_leg_trail_sl(self, instrument_move, stoploss_move) -> None:
+        """Opens the Trail SL popup (cboSLTrailing's chevron - only exists
+        once a Stoploss Type has actually been chosen, so call
+        set_leg_stoploss_premium first), types both values, and clicks the
+        popup's own green confirm checkmark - Enter was NOT tried here
+        (the Strike premium popup's Enter behavior was confirmed to revert
+        rather than commit, so this avoids it on principle rather than
+        re-testing); field/button offsets measured live against this exact
+        combo (2026-09-27)."""
+        combo = self._field("cboSLTrailing", "ComboBox")
+        rect = combo.rectangle()
+        mouse_click(button="left", coords=(rect.right - 8, (rect.top + rect.bottom) // 2))
+        time.sleep(0.6)
+
+        first_field_x = rect.left + 36
+        first_field_y = rect.bottom + 100
+        second_field_x = rect.left + 240
+        confirm_x = rect.left + 378
+        confirm_y = rect.bottom + 157
+
+        mouse_click(button="left", coords=(first_field_x, first_field_y))
+        time.sleep(0.2)
+        send_keys("^a")
+        time.sleep(0.1)
+        send_keys(str(instrument_move), with_spaces=True)
+        time.sleep(0.2)
+
+        mouse_click(button="left", coords=(second_field_x, first_field_y))
+        time.sleep(0.2)
+        send_keys("^a")
+        time.sleep(0.1)
+        send_keys(str(stoploss_move), with_spaces=True)
+        time.sleep(0.2)
+
+        mouse_click(button="left", coords=(confirm_x, confirm_y))
+        time.sleep(0.3)
 
     def save(self) -> None:
         """Clicks Save Portfolio. NOT yet exercised live in this module -
