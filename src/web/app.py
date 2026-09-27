@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import functools
+import json
 import os
 import platform
 import re
@@ -9,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -61,6 +62,11 @@ def index() -> FileResponse:
 @app.get("/analyze")
 def analyze_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "analyze.html")
+
+
+@app.get("/mtquant")
+def mtquant_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "mtquant.html")
 
 
 @app.get("/api/config")
@@ -1955,5 +1961,27 @@ def mtquant_import() -> dict:
     from src import mtquant  # noqa: F401  proves the lazy-import boundary holds; no pywinauto import happens yet
 
     raise HTTPException(status_code=501, detail="MTQuant integration is not implemented yet.")
+
+
+@app.post("/api/mtquant/preview")
+async def mtquant_preview(file: UploadFile = File(...)) -> dict:
+    """Parses an uploaded .algtst file and returns a strategy-by-strategy
+    preview table, WITHOUT touching mtQuant at all - this is pure data
+    transformation (src/mtquant/algtst_parser.py + field_mapping.py, no
+    pywinauto), so unlike /api/mtquant/import this works on every platform,
+    not just Windows. Lets the user review a file (and see any flagged/
+    unmapped fields) before ever bringing it near the live app."""
+    raw = await file.read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Not valid JSON: {exc}") from exc
+
+    from src.mtquant.preview import build_preview
+
+    try:
+        return build_preview(data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Couldn't parse this as a .algtst file: {exc}") from exc
 
 

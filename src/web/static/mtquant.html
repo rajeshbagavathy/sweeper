@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MTQuant Import</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>MTQuant Import</h1>
+  <p>Upload an AlgoTest <code>.algtst</code> export to preview how each strategy maps to mtQuant, before anything touches the live app. <a href="/">&larr; Sweeper</a> &nbsp;|&nbsp; <a href="/analyze">Analyze results &rarr;</a></p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Upload</h2>
+    <div class="row" style="align-items:center;">
+      <div class="field wide">
+        <label>AlgoTest export (.algtst)</label>
+        <input type="file" id="algtstFile" accept=".algtst,.json">
+      </div>
+      <button class="primary" id="previewBtn" onclick="previewAlgtst()">Preview</button>
+      <span id="previewStatus" style="font-size:13px;color:var(--muted);"></span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0;">
+      This only parses the file and shows what it contains - nothing is sent to mtQuant here.
+      Building the actual portfolios in mtQuant is a separate step, not wired up yet.
+    </p>
+  </section>
+
+  <section class="card hidden" id="summaryCard">
+    <h2>Portfolio summary</h2>
+    <div class="status-bar">
+      <span>Portfolio: <strong id="summaryName">-</strong></span>
+      <span>Strategies: <strong id="summaryCount">0</strong></span>
+      <span id="summaryFlagged"></span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="tableCard">
+    <h2>Strategies</h2>
+    <div class="table-scroll" style="max-height:600px;">
+      <table id="strategiesTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Symbol</th>
+            <th>Underlying</th>
+            <th>Lots</th>
+            <th>DTE</th>
+            <th>Days</th>
+            <th>Start</th>
+            <th>SqOff</th>
+            <th>Leg 1</th>
+            <th>Leg 2+</th>
+            <th>Idle legs</th>
+            <th>Overall SL</th>
+            <th>Overall Tgt</th>
+            <th>Overall Trail</th>
+            <th>Lock &amp; Trail</th>
+            <th>SL&rarr;Cost</th>
+            <th class="priority-col">Notes</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function fmtTypeValue(tv) {
+  if (!tv) return "-";
+  const v = tv.value;
+  if (v && typeof v === "object") {
+    // {"InstrumentMove": X, "StopLossMove": Y} style pairs (trail/lock-and-trail)
+    const parts = Object.entries(v).map(([k, val]) => `${k}=${val}`);
+    return `${tv.type} (${parts.join(", ")})`;
+  }
+  return `${tv.type}: ${v}`;
+}
+
+function fmtLeg(leg) {
+  if (!leg) return "";
+  const strike = leg.strike_mode === "PREMIUM"
+    ? `Premium~${leg.strike_value}${leg.premium_selection ? ` (${leg.premium_selection.value_type}, depth ${leg.premium_selection.max_depth}, ${leg.premium_selection.side})` : ""}`
+    : leg.strike_value;
+  const bits = [
+    `${leg.buy_sell} ${leg.ce_pe} ${leg.lots ?? "?"} lot(s) @ ${strike}`,
+    leg.stoploss_pct != null ? `SL ${leg.stoploss_pct}%` : null,
+    leg.target_value != null ? `Tgt ${leg.target_value}` : null,
+    leg.trail_sl ? `Trail ${leg.trail_sl.instrument_move}/${leg.trail_sl.stoploss_move}` : null,
+    leg.wait_trade ? `W&T ${leg.wait_trade}` : null,
+    leg.reentry_kind ? `Reentry ${leg.reentry_kind}${leg.reentry_kind === "AtCost" ? ` x${leg.reentry_count ?? "?"}` : ` → ${leg.reentry_target_leg_id}`}` : null,
+  ].filter(Boolean);
+  return esc(bits.join(" | "));
+}
+
+function renderStrategyRow(s) {
+  const legs = s.legs || [];
+  const idleLegs = s.idle_legs || [];
+  const leg1 = fmtLeg(legs[0]);
+  const restLegs = legs.slice(1).map(fmtLeg).join("<br>");
+  const idleTxt = idleLegs.length ? idleLegs.map(fmtLeg).join("<br>") : "-";
+  const notesTxt = (s.all_notes || []).length
+    ? `<span style="color:var(--error);">${esc(s.all_notes.join(" | "))}</span>`
+    : `<span style="color:var(--ok);">OK</span>`;
+  const rowClass = s.has_notes ? "" : "";
+
+  return `<tr class="${rowClass}">
+    <td>${esc(s.source_strategy_id)}</td>
+    <td>${esc(s.portfolio_name)}</td>
+    <td>${esc(s.symbol)}</td>
+    <td>${esc(s.underlying)}</td>
+    <td>${esc(s.default_lots)}</td>
+    <td>${esc((s.dte || []).join(","))}</td>
+    <td>${esc((s.run_on_days || []).map(d => d.slice(0, 3)).join(","))}</td>
+    <td>${esc(s.start_time)}</td>
+    <td>${esc(s.sqoff_time)}</td>
+    <td>${leg1}</td>
+    <td>${restLegs || "-"}</td>
+    <td>${idleTxt}</td>
+    <td>${esc(fmtTypeValue(s.overall_stoploss))}</td>
+    <td>${esc(fmtTypeValue(s.overall_target))}</td>
+    <td>${esc(fmtTypeValue(s.overall_trail))}</td>
+    <td>${esc(fmtTypeValue(s.lock_and_trail))}</td>
+    <td>${s.move_sl_to_cost ? "Yes" : "No"}</td>
+    <td class="priority-col">${notesTxt}</td>
+  </tr>`;
+}
+
+async function previewAlgtst() {
+  const fileInput = document.getElementById("algtstFile");
+  const statusEl = document.getElementById("previewStatus");
+  const btn = document.getElementById("previewBtn");
+
+  if (!fileInput.files.length) {
+    statusEl.textContent = "Choose a .algtst file first.";
+    statusEl.style.color = "var(--error)";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("file", fileInput.files[0]);
+
+  btn.disabled = true;
+  statusEl.style.color = "var(--muted)";
+  statusEl.textContent = "Parsing...";
+
+  try {
+    const res = await fetch("/api/mtquant/preview", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.detail || `HTTP ${res.status}`);
+    }
+
+    document.getElementById("summaryName").textContent = body.portfolio_name || "(unnamed)";
+    document.getElementById("summaryCount").textContent = body.strategy_count;
+    const flaggedEl = document.getElementById("summaryFlagged");
+    if (body.flagged_count > 0) {
+      flaggedEl.innerHTML = `<span style="color:var(--error);font-weight:600;">${body.flagged_count} strategy(ies) with notes to review</span>`;
+    } else {
+      flaggedEl.innerHTML = `<span style="color:var(--ok);font-weight:600;">All strategies mapped with no notes</span>`;
+    }
+    document.getElementById("summaryCard").classList.remove("hidden");
+
+    const tbody = document.querySelector("#strategiesTable tbody");
+    tbody.innerHTML = (body.strategies || []).map(renderStrategyRow).join("");
+    document.getElementById("tableCard").classList.remove("hidden");
+
+    statusEl.style.color = "var(--ok)";
+    statusEl.textContent = `Parsed ${body.strategy_count} strategies.`;
+  } catch (err) {
+    statusEl.style.color = "var(--error)";
+    statusEl.textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+
+</body>
+</html>
