@@ -280,6 +280,7 @@ class MTQuantSession:
             raise MTQuantAutomationError("Add Portfolio V2 dialog didn't open - the app may be in an unexpected state.")
 
         dlg = self.app.window(handle=new_handle)
+        _force_foreground(new_handle)
         return PortfolioDialog(session=self, dlg=dlg)
 
 
@@ -288,6 +289,26 @@ def _safe_pid(window) -> int | None:
         return window.process_id()
     except Exception:
         return None
+
+
+def _force_foreground(hwnd: int) -> None:
+    """Explicitly brings a window to the real OS foreground/topmost state.
+    Added after a live failure: a freshly-opened dialog reported
+    is_visible()==True and a correct rectangle via UIA, yet was actually
+    BEHIND the main window on screen - every click_input() on it during
+    that window silently landed on the covered main window instead (no
+    exception; UIA element-finding succeeds regardless of Z-order, only
+    the resulting mouse click is affected), producing an empty leg grid
+    with no error raised anywhere. is_visible()/rectangle() are therefore
+    not sufficient proof a dialog is actually clickable - this must be
+    called before trusting coordinate-based clicks against a newly opened
+    window."""
+    import win32con
+    import win32gui
+
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(hwnd)
+    time.sleep(0.3)
 
 
 @dataclass
@@ -382,99 +403,125 @@ class PortfolioDialog:
             chk.click_input()
             time.sleep(0.2)
 
-    # ---- Leg grid - CONFIRMED WORKING FOR THE FIRST LEG ADDED TO A FRESH
-    # DIALOG ONLY. See module docstring for which controls this relies on.
+    # ---- Leg grid ----
     #
-    # OPEN BLOCKER, not guessed past: a SECOND (or later) leg row does not
-    # expose the same auto_id'd controls that the first row does, even
-    # while visually active/being edited - confirmed by scanning
-    # descendants() for cboStrike after adding a second row: zero matches,
-    # where the first row reliably gave exactly one. Tried the on-screen
-    # hint "PRESS ENTER TO SAVE THE ROW" as a way to commit row 1 before
-    # adding row 2 - this produced inconsistent results live (row 1's B/S
-    # reverted from Sell back to Buy, and both rows' Strike fields went
-    # empty), so it is NOT what these methods do. Building a strategy needs
-    # 2+ legs in every one of the user's real strategies, so this blocks
-    # `build_portfolio()` from filling more than one leg until the correct
-    # multi-leg workflow is confirmed - ask the user how they normally add
-    # a second leg in the app (a specific button/key to finish a row
-    # before starting the next?) rather than guessing further at this.
+    # CORRECTED per the user's own direct guidance on how they use the app
+    # (2026-09-27), replacing an earlier wrong assumption in this module:
+    # for a PREMIUM-based strategy, click "Add Leg" once per leg needed
+    # UP FRONT (e.g. twice for a 2-leg strategy) BEFORE filling any
+    # fields, then go back and fill each row - not fill-one-then-add-next.
+    # Confirmed live: with both rows added first, EVERY row's fields are
+    # genuinely UI-Automation-addressable simultaneously (checked
+    # btnBuySell, cboClosestPremium, cboSLType, cboTargetType - all gave
+    # exactly 2 matches, one per row, distinguishable by rect.top). The
+    # earlier "second row is broken" conclusion was from testing the WRONG
+    # order (fill row 1 fully, including pressing Enter, before adding row
+    # 2), which is not how the app is meant to be used.
+    #
+    # For an ATM/OTM strategy, the user's guidance is to use the
+    # "Predefined Strategies" dropdown instead (Short Straddle for ATM,
+    # Short Strangle for OTM) rather than building legs one at a time -
+    # NOT YET IMPLEMENTED/TESTED in this module, see select_predefined_
+    # strategy's docstring.
+    #
+    # The Strike column's live control is named "cboClosestPremium" here
+    # (NOT "cboStrike" - that name doesn't exist once chkPremiumGreekLeg
+    # is ticked; corrected from an earlier wrong guess in this module).
+    # Because multiple rows can share the same auto_id once 2+ legs exist,
+    # every leg-row method below takes an explicit `row_index` (0-based,
+    # rows ordered top-to-bottom) and uses `_leg_field` to disambiguate.
+
+    def _leg_field(self, auto_id: str, row_index: int, control_type: str | None = None):
+        """Finds the row_index-th (0-based, sorted top-to-bottom) live
+        control with this auto_id - needed because once 2+ legs exist,
+        every leg-row auto_id has one match per row, and plain child_window
+        picks an unspecified one."""
+        kwargs = {"control_type": control_type} if control_type else {}
+        matches = [d for d in self.dlg.descendants(**kwargs) if d.automation_id() == auto_id]
+        matches.sort(key=lambda d: d.rectangle().top)
+        if row_index >= len(matches):
+            raise MTQuantAutomationError(
+                f"row_index={row_index} out of range for {auto_id!r} - only {len(matches)} row(s) currently have a live control with this id. "
+                "Legs must be added (add_leg(), once per leg, before filling any of them) before their fields can be set."
+            )
+        return matches[row_index]
 
     def add_leg(self) -> None:
-        """Clicks "Add Leg", creating a new row - Buy/CE/1 lot/Weekly/ATM by
-        default. Only confirmed reliable for the FIRST leg in a fresh
-        dialog - see the blocker note above."""
+        """Clicks "Add Leg", creating a new row - Buy/CE/1 lot/Weekly by
+        default (Strike is blank when chkPremiumGreekLeg is ticked, "ATM"
+        otherwise). Call this once per leg needed, for ALL legs, before
+        filling any of their fields - see the class-level note above."""
         self._field("btnAdd", "Button").click_input()
         time.sleep(0.5)
 
-    def set_leg_buy_sell(self, side: str) -> None:
-        """`side`: "Buy" | "Sell". One click on the toggle button flips it;
-        checks the button's current text first so this is idempotent."""
-        btn = self._field("btnBuySell", "Button")
-        if btn.window_text().strip().lower() != side.lower():
-            btn.click_input()
+    def select_predefined_strategy(self, name: str) -> None:
+        """Not yet implemented/tested. The user's guidance for an ATM/OTM
+        strategy is to use the "Predefined Strategies" dropdown (e.g.
+        "ShortStraddle" for ATM, "ShortStrangle" for OTM) instead of
+        building legs one at a time - this auto-populates the matching
+        legs. Raises rather than guessing at the dropdown's exact option
+        text or interaction pattern, neither of which has been confirmed
+        live yet."""
+        raise NotImplementedError("select_predefined_strategy: guidance received but not yet tested live - see this method's docstring.")
+
+    def set_leg_buy_sell(self, row_index: int, side: str) -> None:
+        """`side`: "Buy" | "Sell". One click flips the toggle button.
+
+        CORRECTED mid-session: this used to check the button's current text
+        first to be idempotent, but window_text() was confirmed live to
+        always return the literal string "Button" for this control, never
+        the actual "Buy"/"Sell" label - so that check was silently
+        comparing against the wrong thing and could click when it
+        shouldn't have (confirmed: it caused a real, wrong CE->PE flip on
+        set_leg_ce_pe below). This method now assumes the KNOWN default
+        for a freshly-added leg ("Buy") rather than querying unreliable
+        state - it must be called exactly once per leg, right after
+        add_leg(), not repeatedly."""
+        if side.lower() != "buy":
+            self._leg_field("btnBuySell", row_index, "Button").click_input()
             time.sleep(0.3)
 
-    def set_leg_ce_pe(self, kind: str) -> None:
-        """`kind`: "CE" | "PE". Same idempotent toggle-button pattern as
-        set_leg_buy_sell."""
-        btn = self._field("btnCEPE", "Button")
-        if btn.window_text().strip().upper() != kind.upper():
-            btn.click_input()
+    def set_leg_ce_pe(self, row_index: int, kind: str) -> None:
+        """`kind`: "CE" | "PE". Same fixed pattern as set_leg_buy_sell -
+        assumes the known default ("CE") for a freshly-added leg rather
+        than an unreliable window_text() readback. Call exactly once per
+        leg, right after add_leg()."""
+        if kind.upper() != "CE":
+            self._leg_field("btnCEPE", row_index, "Button").click_input()
             time.sleep(0.3)
 
-    def set_leg_lots(self, lots: int) -> None:
-        _set_edit_text(self._field("nmLots"), lots)
+    def set_leg_lots(self, row_index: int, lots: int) -> None:
+        _set_edit_text(self._leg_field("nmLots", row_index, "Spinner"), lots)
 
-    def set_leg_strike_relative(self, label: str) -> None:
-        """`label` like "ATM", "OTM2", "ITM1" - typed directly into the
-        Strike combo's own text portion (NOT its chevron, which instead
-        opens either the Premium/Greek Legs sub-form or a plain ATM-offset
-        picker depending on chkPremiumGreekLeg's state at leg-creation time
-        - see set_leg_strike_premium). ATM is this field's own default for
-        a freshly-added leg, so this only needs calling for a non-ATM
-        relative strike - untested for OTM/ITM specifically (no strategy in
-        the user's real file uses them), flagged rather than assumed to
-        definitely work.
-        """
-        combo = self._field("cboStrike", "ComboBox")
-        rect = combo.rectangle()
-        mouse_click(button="left", coords=(rect.left + 30, (rect.top + rect.bottom) // 2))
-        time.sleep(0.2)
-        send_keys("^a")
-        time.sleep(0.1)
-        send_keys(label, with_spaces=True)
-        time.sleep(0.1)
-        send_keys("{TAB}")
-        time.sleep(0.2)
-
-    def set_leg_strike_premium(self, target_premium) -> None:
+    def set_leg_strike_premium(self, row_index: int, target_premium) -> None:
         """Opens the Strike column's "Premium / Greek Legs" sub-form (via
-        its chevron) and sets Value Type=NearestPremium, Value=
-        target_premium, leaving Cond ("Any"), Max Depth (15) and Side
-        (BOTH) at their own defaults - see field_mapping.py's
-        build_premium_selection for why NearestPremium with no range is
-        the right choice for AlgoTest's EntryByPremium.
+        its chevron - a plain click on the text portion does not open it)
+        and sets Value Type=NearestPremium, Value=target_premium, leaving
+        Cond ("Any"), Max Depth (15) and Side (BOTH) at their own defaults
+        - see field_mapping.py's build_premium_selection for why
+        NearestPremium with no range is the right choice for AlgoTest's
+        EntryByPremium. Confirmed live for both a first AND a second leg
+        row, using each row's own combo rectangle as the offset origin -
+        not just tested once and assumed to generalize.
 
         REQUIRES chkPremiumGreekLeg to already be ticked at the time this
         leg was added via add_leg() - confirmed live that the sub-form
         vs. plain ATM-offset-picker choice is locked in at leg-CREATION
         time and does NOT change retroactively if the checkbox is ticked
-        after the fact. This method does not tick the checkbox itself -
-        callers must do that before add_leg().
+        after the fact.
         """
-        combo = self._field("cboStrike", "ComboBox")
+        combo = self._leg_field("cboClosestPremium", row_index, "ComboBox")
         rect = combo.rectangle()
         mouse_click(button="left", coords=(rect.right - 8, (rect.top + rect.bottom) // 2))
         time.sleep(0.6)
 
-        # Sub-form opens directly below the combo, left-aligned with it.
-        # Value Type's own chevron and NearestPremium's row position,
-        # measured live against this exact combo (2026-09-27).
+        # Sub-form opens directly below the combo, left-aligned with it -
+        # offsets measured live against both a first-leg and a second-leg
+        # combo (2026-09-27), consistent between the two.
         vt_chevron_x = rect.left + 350
         vt_chevron_y = rect.bottom + 15
         mouse_click(button="left", coords=(vt_chevron_x, vt_chevron_y))
-        time.sleep(0.5)
+        time.sleep(0.6)
         index = STRIKE_VALUE_TYPE_OPTIONS.index("NearestPremium")
         mouse_click(
             button="left",
@@ -483,47 +530,45 @@ class PortfolioDialog:
         time.sleep(0.4)
 
         # Value field: same row as Value Type, one field-row below it.
-        mouse_click(button="left", coords=(rect.left + 30, rect.bottom + 62))
+        mouse_click(button="left", coords=(rect.left + 30, rect.bottom + 72))
         time.sleep(0.2)
         send_keys("^a")
         time.sleep(0.1)
         send_keys(str(target_premium), with_spaces=True)
         time.sleep(0.2)
         # Click elsewhere on the dialog to commit + close the popup - Enter
-        # was confirmed live to REVERT the value instead of committing it
-        # (see field_mapping.py's module docstring), so this deliberately
-        # does not press Enter here.
+        # was confirmed live to REVERT the value instead of committing it,
+        # so this deliberately does not press Enter here.
         dlg_rect = self.dlg.rectangle()
         mouse_click(button="left", coords=(dlg_rect.left + 50, dlg_rect.top + 50))
         time.sleep(0.3)
 
-    def set_leg_stoploss_premium(self, value) -> None:
+    def set_leg_stoploss_premium(self, row_index: int, value) -> None:
         """Sets the leg's Stoploss Type to "Premium" (AlgoTest's
         "Percentage" type - see LEG_SL_TYPE_MAP) and its value."""
-        combo = self._field("cboSLType", "ComboBox")
+        combo = self._leg_field("cboSLType", row_index, "ComboBox")
         _select_dropdown_option(combo, LEG_SL_TYPE_OPTIONS, LEG_SL_TYPE_MAP["Percentage"])
-        _set_edit_text(self._field("txtSL", "Edit"), value)
+        _set_edit_text(self._leg_field("txtSL", row_index, "Edit"), value)
 
-    def set_leg_wait_trade(self, value: str) -> None:
-        _set_edit_text(self._field("txtWT", "Edit"), value)
+    def set_leg_wait_trade(self, row_index: int, value: str) -> None:
+        _set_edit_text(self._leg_field("txtWT", row_index, "Edit"), value)
 
-    def set_leg_idle(self, idle: bool) -> None:
-        chk = self._field("chkIdle", "CheckBox")
+    def set_leg_idle(self, row_index: int, idle: bool) -> None:
+        chk = self._leg_field("chkIdle", row_index, "CheckBox")
         is_checked = bool(chk.get_toggle_state()) if hasattr(chk, "get_toggle_state") else None
         if is_checked != idle:
             chk.click_input()
             time.sleep(0.2)
 
-    def set_leg_trail_sl(self, instrument_move, stoploss_move) -> None:
+    def set_leg_trail_sl(self, row_index: int, instrument_move, stoploss_move) -> None:
         """Opens the Trail SL popup (cboSLTrailing's chevron - only exists
         once a Stoploss Type has actually been chosen, so call
         set_leg_stoploss_premium first), types both values, and clicks the
-        popup's own green confirm checkmark - Enter was NOT tried here
-        (the Strike premium popup's Enter behavior was confirmed to revert
-        rather than commit, so this avoids it on principle rather than
-        re-testing); field/button offsets measured live against this exact
-        combo (2026-09-27)."""
-        combo = self._field("cboSLTrailing", "ComboBox")
+        popup's own green confirm checkmark. Field/button offsets measured
+        live against this exact combo (2026-09-27) - NOT yet re-verified
+        against a second leg row the way set_leg_strike_premium was, so
+        treat this one row-generalization as slightly less certain."""
+        combo = self._leg_field("cboSLTrailing", row_index, "ComboBox")
         rect = combo.rectangle()
         mouse_click(button="left", coords=(rect.right - 8, (rect.top + rect.bottom) // 2))
         time.sleep(0.6)
