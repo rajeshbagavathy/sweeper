@@ -91,8 +91,11 @@ def test_plain_atm_straddle_maps_cleanly():
     assert plan.default_lots == 4
     assert plan.dte == [1]
     assert plan.run_on_days == ["Monday", "Tuesday", "Thursday", "Friday"]  # wed/sat/sun excluded
-    assert plan.start_time == "09:37:00"
-    assert plan.sqoff_time == "14:45:00"
+    assert plan.start_time == "09:36:59"
+    assert plan.sqoff_time == "14:44:59"
+    assert plan.entry_path == "predefined"
+    assert plan.predefined_strategy == "ShortStraddle"
+    assert plan.sl_wait_seconds == 10
     assert plan.overall_stoploss == {"type": "MTM", "value": 600}
     assert plan.move_sl_to_cost is False
     assert not plan.has_notes
@@ -102,6 +105,8 @@ def test_plain_atm_straddle_maps_cleanly():
     assert ce.ce_pe == "CE"
     assert ce.strike_mode == "ATM"
     assert ce.stoploss_pct == 15
+    assert ce.stoploss_text == "15%"
+    assert ce.strike_label == "ATM"
     assert ce.trail_sl == {"instrument_move": 5, "stoploss_move": 1}
     assert not ce.has_notes
 
@@ -123,6 +128,47 @@ def test_atm_leg_has_no_premium_selection():
     strategy = _strategy(_definition(), _item("1"))
     plan = build_portfolio_plan(strategy)
     assert plan.legs[0].premium_selection is None
+
+
+def test_lazy_legs_are_execute_leg_by_side_not_by_guessing_the_number():
+    from src.mtquant.field_mapping import execute_leg_name, grid_rows
+
+    # Same shape as strategy 10: live CE/PE, then lazy CE/PE.
+    ce_lazy = _leg("lazy1", "CE", 35, entry_type="EntryByPremium")
+    pe_lazy = _leg("lazy2", "PE", 35, entry_type="EntryByPremium")
+    ce = _leg("leg1", "CE", 70, entry_type="EntryByPremium", LegReentrySL={"Type": "ReentryType.NextLeg", "Value": {"NextLegRef": "lazy1"}})
+    pe = _leg("leg2", "PE", 70, entry_type="EntryByPremium", LegReentrySL={"Type": "ReentryType.NextLeg", "Value": {"NextLegRef": "lazy2"}})
+    strategy = _strategy(
+        _definition(IdleLegConfigs={"lazy1": ce_lazy, "lazy2": pe_lazy}, ListOfLegConfigs=[ce, pe]),
+        _item("1"),
+    )
+    plan = build_portfolio_plan(strategy)
+    rows = grid_rows(plan)
+    assert [leg.ce_pe for leg in rows] == ["CE", "PE", "CE", "PE"]
+    assert execute_leg_name(rows, plan.legs[0]) == "Execute_Leg3"
+    assert execute_leg_name(rows, plan.legs[1]) == "Execute_Leg4"
+    assert plan.legs[0].on_sl_action == "Execute_Leg3"
+    assert plan.legs[1].on_sl_action == "Execute_Leg4"
+
+
+def test_saved_portfolio_name_is_strike_sl_and_start_time():
+    atm = _strategy(
+        _definition(EntryIndicators=_time_indicator(9, 17), ListOfLegConfigs=[
+            _leg("leg1", "CE", "StrikeType.ATM", LegStopLoss={"Type": "LegTgtSLType.Percentage", "Value": 20}),
+            _leg("leg2", "PE", "StrikeType.ATM", LegStopLoss={"Type": "LegTgtSLType.Percentage", "Value": 20}),
+        ]),
+        _item("1"),
+    )
+    assert build_portfolio_plan(atm).portfolio_name == "ATM_20%_09.17"
+
+    premium = _strategy(
+        _definition(EntryIndicators=_time_indicator(9, 30), ListOfLegConfigs=[
+            _leg("leg1", "CE", 70, entry_type="EntryByPremium", LegStopLoss={"Type": "LegTgtSLType.Percentage", "Value": 25}),
+            _leg("leg2", "PE", 70, entry_type="EntryByPremium", LegStopLoss={"Type": "LegTgtSLType.Percentage", "Value": 25}),
+        ]),
+        _item("1"),
+    )
+    assert build_portfolio_plan(premium).portfolio_name == "PRM70_25%_09.30"
 
 
 def test_nextleg_reentry_produces_idle_leg_plan_and_reference():
@@ -155,6 +201,42 @@ def test_percentage_down_momentum_maps_to_negative_percent_wait_trade():
     ce = plan.legs[0]
     assert ce.wait_trade == "-5%"
     assert not ce.has_notes  # PercentageDown is the doc-confirmed case - no caveat needed
+
+
+def test_percentage_up_momentum_maps_to_unsigned_percent():
+    leg = _leg("leg1", "CE", "StrikeType.ATM", LegMomentum={"Type": "MomentumType.PercentageUp", "Value": 5})
+    strategy = _strategy(_definition(ListOfLegConfigs=[leg, _leg("leg2", "PE", "StrikeType.ATM")]), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    ce = plan.legs[0]
+    assert ce.wait_trade == "5%"
+    assert not ce.has_notes
+
+
+def test_otm_and_itm_offsets_flip_between_ce_and_pe():
+    legs = [
+        _leg("ce-otm", "CE", "StrikeType.OTM2"),
+        _leg("pe-otm", "PE", "StrikeType.OTM1"),
+        _leg("ce-itm", "CE", "StrikeType.ITM1"),
+        _leg("pe-itm", "PE", "StrikeType.ITM2"),
+    ]
+    strategy = _strategy(_definition(ListOfLegConfigs=legs), _item("1"))
+    plan = build_portfolio_plan(strategy)
+    labels = {leg.leg_id: leg.strike_label for leg in plan.legs}
+    assert labels == {"ce-otm": "ATM+100", "pe-otm": "ATM-50", "ce-itm": "ATM-50", "pe-itm": "ATM+100"}
+    assert plan.entry_path == "predefined"
+    assert plan.predefined_strategy == "ShortStrangle"
+
+
+def test_premium_plan_does_not_use_a_predefined_strategy():
+    strategy = _strategy(
+        _definition(ListOfLegConfigs=[_leg("leg1", "CE", 40, entry_type="EntryByPremium"), _leg("leg2", "PE", 40, entry_type="EntryByPremium")]),
+        _item("1"),
+    )
+    plan = build_portfolio_plan(strategy)
+    assert plan.entry_path == "premium"
+    assert plan.predefined_strategy is None
+    assert plan.legs[0].strike_label is None
+    assert plan.legs[0].stoploss_text == "15%"
 
 
 def test_underlying_points_down_momentum_maps_to_negative_points_wait_trade():
@@ -206,14 +288,26 @@ def test_real_file_builds_a_plan_for_every_strategy_with_notes_surfaced():
     portfolio = parse_algtst_file(path)
     plans = [build_portfolio_plan(s) for s in portfolio.strategies]
     assert len(plans) == 14
+    by_id = {plan.source_strategy_id: plan.portfolio_name for plan in plans}
+    assert by_id["3"] == "ATM_20%_09.17"
+    assert by_id["10"] == "PRM70_25%_14.51"
     for plan in plans:
         assert plan.symbol == "NIFTY"
         assert len(plan.legs) == 2
         # Every leg in this real file is EntryByPremium or ATM EntryByStrikeType -
         # both parse to a strike_mode, never "UNKNOWN".
+        assert plan.start_time.endswith(":59")
+        assert plan.sqoff_time.endswith(":59")
+        assert plan.dte == [1]
+        if plan.entry_path == "predefined":
+            assert plan.predefined_strategy == "ShortStraddle"
         for leg in plan.legs:
             assert leg.strike_mode != "UNKNOWN"
             if leg.strike_mode == "PREMIUM":
                 assert leg.premium_selection["value_type"] == "NearestPremium"
                 assert leg.premium_selection["value"] == leg.strike_value
                 assert not leg.has_notes
+            if leg.strike_mode == "ATM":
+                assert leg.strike_label == "ATM"
+            if leg.stoploss_pct is not None:
+                assert leg.stoploss_text == f"{leg.stoploss_pct:g}%"

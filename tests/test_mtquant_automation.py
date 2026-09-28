@@ -18,7 +18,13 @@ from src.mtquant.automation import (
     COMBINED_SL_TYPE_OPTIONS,
     DROPDOWN_FIRST_ITEM_OFFSET,
     DROPDOWN_ROW_HEIGHT,
+    CLASSIC_ON_SL_ACTIONS,
+    dte_option_name,
+    ON_SL_LEG_ACTIONS,
+    REENTRY_COUNT,
+    REENTRY_DELAY_SECONDS,
     OVERALL_SL_TYPE_MAP,
+    PREDEFINED_TREE_OPTIONS,
     MTQuantAutomationError,
     PortfolioDialog,
     _select_dropdown_option,
@@ -76,6 +82,27 @@ def test_select_dropdown_option_computes_click_position_from_live_rect():
     assert chevron_click == (rect.right - 15, (rect.top + rect.bottom) // 2)
     expected_y = int(rect.bottom + DROPDOWN_FIRST_ITEM_OFFSET + 1 * DROPDOWN_ROW_HEIGHT)  # index 1
     assert option_click == (rect.left + 30, expected_y)
+
+
+def test_popular_tree_puts_short_straddle_and_strangle_under_the_header():
+    # Popular is row 0 and stays expanded. The click index is the row under it.
+    assert PREDEFINED_TREE_OPTIONS[:4] == ["Popular", "Custom", "ShortStraddle", "ShortStrangle"]
+
+
+def test_classic_on_stoploss_lists_execute_leg_by_row_number():
+    assert CLASSIC_ON_SL_ACTIONS.index("Execute_Leg3") == 12
+    assert CLASSIC_ON_SL_ACTIONS.index("Execute_Leg4") == 13
+
+
+def test_dte1_name_does_not_also_match_dte10():
+    names = [dte_option_name(n) for n in range(0, 11)]
+    assert [name for name in names if name == dte_option_name(1)] == ["DTE_1"]
+
+
+def test_reentry_is_the_leg_action_under_on_stoploss():
+    assert ON_SL_LEG_ACTIONS.index("ReEntry") == 3
+    assert REENTRY_COUNT == 1
+    assert REENTRY_DELAY_SECONDS == 5
 
 
 def test_select_dropdown_option_rejects_unknown_option():

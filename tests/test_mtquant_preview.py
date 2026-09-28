@@ -80,13 +80,28 @@ def test_build_preview_shape():
 
     s = preview["strategies"][0]
     assert s["symbol"] == "NIFTY"
-    assert s["start_time"] == "09:37:00"
-    assert s["sqoff_time"] == "14:45:00"
+    assert s["start_time"] == "09:36:59"
+    assert s["sqoff_time"] == "14:44:59"
+    assert s["entry_path"] == "predefined"
+    assert s["predefined_strategy"] == "ShortStraddle"
     assert s["has_notes"] is False
     assert s["all_notes"] == []
     assert len(s["legs"]) == 2
     assert s["legs"][0]["ce_pe"] == "CE"
     assert s["legs"][0]["has_notes"] is False
+
+
+def test_build_state_rejects_a_tag_with_spaces_before_touching_mtquant():
+    from src.mtquant.build_state import MTQuantBuildState
+
+    state = MTQuantBuildState()
+    try:
+        state.start([object()], "NIFTY 1DTE")
+    except ValueError as exc:
+        assert "NIFTY_1DTE" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+    assert state.status == "idle"
 
 
 def test_build_preview_is_json_serializable():

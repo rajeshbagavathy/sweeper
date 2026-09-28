@@ -9,7 +9,7 @@
 
 <header>
   <h1>MTQuant Import</h1>
-  <p>Upload an AlgoTest <code>.algtst</code> export to preview how each strategy maps to mtQuant, before anything touches the live app. <a href="/">&larr; Sweeper</a> &nbsp;|&nbsp; <a href="/analyze">Analyze results &rarr;</a></p>
+  <p>Upload an AlgoTest <code>.algtst</code> export, check the mapped parameters, then create those portfolios in mtQuant. <a href="/">&larr; Sweeper</a> &nbsp;|&nbsp; <a href="/analyze">Analyze results &rarr;</a></p>
 </header>
 
 <main>
@@ -25,8 +25,7 @@
       <span id="previewStatus" style="font-size:13px;color:var(--muted);"></span>
     </div>
     <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0;">
-      This only parses the file and shows what it contains - nothing is sent to mtQuant here.
-      Building the actual portfolios in mtQuant is a separate step, not wired up yet.
+      Preview only reads the file. Nothing is sent to mtQuant until you create portfolios below.
     </p>
   </section>
 
@@ -45,6 +44,7 @@
       <table id="strategiesTable">
         <thead>
           <tr>
+            <th></th>
             <th>ID</th>
             <th>Name</th>
             <th>Symbol</th>
@@ -52,6 +52,7 @@
             <th>Lots</th>
             <th>DTE</th>
             <th>Days</th>
+            <th>Build as</th>
             <th>Start</th>
             <th>SqOff</th>
             <th>Leg 1</th>
@@ -68,6 +69,23 @@
         <tbody></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="card hidden" id="saveCard">
+    <h2>Create in mtQuant</h2>
+    <p style="font-size:13px;color:var(--muted);margin-top:0;">
+      mtQuant must already be open. The tag is created on the Strategies tab first, then each checked strategy is saved as its own portfolio on Multi-Leg.
+      Start and square-off times are the AlgoTest clock minus one second (09:17 becomes 09:16:59). Leg lots stay at 1; Default Lots uses the file's multiplier.
+    </p>
+    <div class="row" style="align-items:flex-end;">
+      <div class="field">
+        <label for="strategyTag">Strategy tag</label>
+        <input type="text" id="strategyTag" placeholder="NIFTY_1DTE" autocomplete="off">
+      </div>
+      <button class="primary" id="saveBtn" onclick="saveToMtquant()">Create checked portfolios</button>
+      <span id="saveStatus" style="font-size:13px;color:var(--muted);"></span>
+    </div>
+    <pre id="saveLog" style="display:none;white-space:pre-wrap;font-size:12px;margin-top:12px;"></pre>
   </section>
 
 </main>
@@ -88,18 +106,20 @@ function fmtTypeValue(tv) {
   return `${tv.type}: ${v}`;
 }
 
+let lastPreviewFile = null;
+
 function fmtLeg(leg) {
   if (!leg) return "";
   const strike = leg.strike_mode === "PREMIUM"
-    ? `Premium~${leg.strike_value}${leg.premium_selection ? ` (${leg.premium_selection.value_type}, depth ${leg.premium_selection.max_depth}, ${leg.premium_selection.side})` : ""}`
-    : leg.strike_value;
+    ? `Premium~${leg.strike_value}${leg.premium_selection ? ` (${leg.premium_selection.value_type})` : ""}`
+    : (leg.strike_label || leg.strike_value);
   const bits = [
-    `${leg.buy_sell} ${leg.ce_pe} ${leg.lots ?? "?"} lot(s) @ ${strike}`,
-    leg.stoploss_pct != null ? `SL ${leg.stoploss_pct}%` : null,
+    `${leg.buy_sell} ${leg.ce_pe} @ ${strike}`,
+    leg.stoploss_text ? `SL ${leg.stoploss_text}` : null,
     leg.target_value != null ? `Tgt ${leg.target_value}` : null,
     leg.trail_sl ? `Trail ${leg.trail_sl.instrument_move}/${leg.trail_sl.stoploss_move}` : null,
     leg.wait_trade ? `W&T ${leg.wait_trade}` : null,
-    leg.reentry_kind ? `Reentry ${leg.reentry_kind}${leg.reentry_kind === "AtCost" ? ` x${leg.reentry_count ?? "?"}` : ` → ${leg.reentry_target_leg_id}`}` : null,
+    leg.on_sl_action ? `On SL ${leg.on_sl_action}` : (leg.reentry_kind ? `Reentry ${leg.reentry_kind}${leg.reentry_kind === "AtCost" ? ` x${leg.reentry_count ?? "?"}` : ` → ${leg.reentry_target_leg_id}`}` : null),
   ].filter(Boolean);
   return esc(bits.join(" | "));
 }
@@ -115,7 +135,11 @@ function renderStrategyRow(s) {
     : `<span style="color:var(--ok);">OK</span>`;
   const rowClass = s.has_notes ? "" : "";
 
+  const buildAs = s.entry_path === "predefined"
+    ? (s.predefined_strategy === "ShortStraddle" ? "Short straddle" : "Short strangle")
+    : "Premium legs";
   return `<tr class="${rowClass}">
+    <td><input type="checkbox" class="strategyPick" value="${esc(s.source_strategy_id)}" ${s.has_notes ? "" : "checked"}></td>
     <td>${esc(s.source_strategy_id)}</td>
     <td>${esc(s.portfolio_name)}</td>
     <td>${esc(s.symbol)}</td>
@@ -123,6 +147,7 @@ function renderStrategyRow(s) {
     <td>${esc(s.default_lots)}</td>
     <td>${esc((s.dte || []).join(","))}</td>
     <td>${esc((s.run_on_days || []).map(d => d.slice(0, 3)).join(","))}</td>
+    <td>${esc(buildAs)}</td>
     <td>${esc(s.start_time)}</td>
     <td>${esc(s.sqoff_time)}</td>
     <td>${leg1}</td>
@@ -175,6 +200,8 @@ async function previewAlgtst() {
     const tbody = document.querySelector("#strategiesTable tbody");
     tbody.innerHTML = (body.strategies || []).map(renderStrategyRow).join("");
     document.getElementById("tableCard").classList.remove("hidden");
+    document.getElementById("saveCard").classList.remove("hidden");
+    lastPreviewFile = fileInput.files[0];
 
     statusEl.style.color = "var(--ok)";
     statusEl.textContent = `Parsed ${body.strategy_count} strategies.`;
@@ -183,6 +210,78 @@ async function previewAlgtst() {
     statusEl.textContent = "Error: " + err.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function saveToMtquant() {
+  const statusEl = document.getElementById("saveStatus");
+  const btn = document.getElementById("saveBtn");
+  const tag = document.getElementById("strategyTag").value.trim();
+  const ids = [...document.querySelectorAll(".strategyPick:checked")].map(el => el.value);
+  if (!lastPreviewFile) {
+    statusEl.textContent = "Preview a file first.";
+    statusEl.style.color = "var(--error)";
+    return;
+  }
+  if (!tag) {
+    statusEl.textContent = "Enter a strategy tag first.";
+    statusEl.style.color = "var(--error)";
+    return;
+  }
+  if (!ids.length) {
+    statusEl.textContent = "Check at least one strategy.";
+    statusEl.style.color = "var(--error)";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("file", lastPreviewFile);
+  form.append("strategy_tag", tag);
+  form.append("strategy_ids", ids.join(","));
+
+  btn.disabled = true;
+  statusEl.style.color = "var(--muted)";
+  statusEl.textContent = "Starting...";
+  const logEl = document.getElementById("saveLog");
+  logEl.style.display = "none";
+  logEl.textContent = "";
+
+  try {
+    const res = await fetch("/api/mtquant/build", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
+    await pollBuild();
+  } catch (err) {
+    statusEl.style.color = "var(--error)";
+    statusEl.textContent = "Error: " + err.message;
+    btn.disabled = false;
+  }
+}
+
+async function pollBuild() {
+  const statusEl = document.getElementById("saveStatus");
+  const btn = document.getElementById("saveBtn");
+  const logEl = document.getElementById("saveLog");
+  for (;;) {
+    const res = await fetch("/api/mtquant/build/status");
+    const body = await res.json();
+    const progress = body.total ? ` (${body.current}/${body.total})` : "";
+    statusEl.textContent = (body.message || body.status) + progress;
+    if (body.results && body.results.length) {
+      logEl.style.display = "block";
+      logEl.textContent = body.results.map(r => `${r.ok ? "saved" : "FAILED"} ${r.strategy_id} ${r.name}${r.error ? " — " + r.error : ""}`).join("\n");
+    }
+    if (body.status === "done") {
+      statusEl.style.color = "var(--ok)";
+      btn.disabled = false;
+      return;
+    }
+    if (body.status === "error") {
+      statusEl.style.color = "var(--error)";
+      btn.disabled = false;
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
   }
 }
 </script>

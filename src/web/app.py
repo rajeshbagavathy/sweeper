@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1983,5 +1983,59 @@ async def mtquant_preview(file: UploadFile = File(...)) -> dict:
         return build_preview(data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Couldn't parse this as a .algtst file: {exc}") from exc
+
+
+@app.post("/api/mtquant/build")
+async def mtquant_build(
+    strategy_tag: str = Form(...),
+    strategy_ids: str = Form(""),
+    file: UploadFile = File(...),
+) -> dict:
+    """Creates the selected strategies in the running mtQuant app.
+
+    Windows-only, and pywinauto is imported only inside the background worker
+    (see src/mtquant/build_state.py). The preview table is the check the user
+    does before this is called.
+    """
+    if platform.system() != "Windows":
+        raise HTTPException(
+            status_code=400,
+            detail="MTQuant integration is only available on Windows (this is a Windows desktop app, not a website).",
+        )
+    raw = await file.read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Not valid JSON: {exc}") from exc
+
+    from src.mtquant.algtst_parser import parse_algtst_data
+    from src.mtquant.build_state import mtquant_build_state
+    from src.mtquant.field_mapping import build_portfolio_plan
+
+    try:
+        portfolio = parse_algtst_data(data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Couldn't parse this as a .algtst file: {exc}") from exc
+
+    wanted = {part.strip() for part in strategy_ids.split(",") if part.strip()}
+    plans = [build_portfolio_plan(s) for s in portfolio.strategies if not wanted or s.strategy_id in wanted]
+    if wanted and len(plans) != len(wanted):
+        found = {p.source_strategy_id for p in plans}
+        missing = sorted(wanted - found)
+        raise HTTPException(status_code=400, detail=f"Unknown strategy id(s): {', '.join(missing)}")
+    try:
+        mtquant_build_state.start(plans, strategy_tag)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True, "total": len(plans)}
+
+
+@app.get("/api/mtquant/build/status")
+def mtquant_build_status() -> dict:
+    from src.mtquant.build_state import mtquant_build_state
+
+    return mtquant_build_state.snapshot()
 
 

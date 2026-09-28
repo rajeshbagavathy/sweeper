@@ -101,12 +101,85 @@ from src.mtquant.algtst_parser import AlgtstLeg, AlgtstStrategy
 
 _WEEKDAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
+# Index strike spacing. NIFTY's 50 was confirmed on the live dialog (the Strike
+# Step field reads 50 when the symbol is NIFTY). The others are the exchange's
+# standard option strike intervals, used only to turn OTM1/ITM2 into ATM±N.
+STRIKE_STEPS = {
+    "NIFTY": 50,
+    "BANKNIFTY": 100,
+    "FINNIFTY": 50,
+    "MIDCPNIFTY": 25,
+    "SENSEX": 100,
+    "BANKEX": 100,
+}
+
+# Typed into the Stoploss Settings "SL wait" field on every portfolio.
+SL_WAIT_SECONDS = 10
+
+
+def _strike_name_token(leg: LegPlan) -> str | None:
+    """The first piece of the saved portfolio name.
+
+    ATM stays "ATM". A premium of 70 becomes "PRM70".
+    """
+    if leg.strike_mode == "PREMIUM":
+        try:
+            value = f"{float(leg.strike_value):g}"
+        except (TypeError, ValueError):
+            value = str(leg.strike_value)
+        return f"PRM{value}"
+    if leg.strike_mode and leg.strike_mode != "UNKNOWN":
+        return leg.strike_mode
+    return None
+
+
+def portfolio_save_name(legs: list[LegPlan], entry_time: tuple[int, int] | None) -> str:
+    """Name typed into Option Portfolio Name when the portfolio is saved.
+
+    `<Strike or premium>_<SL%>_<start HH.MM>`, using the original legs and
+    the strategy's own start clock (09:17 stays 09.17, not the minus-one-second
+    value typed into Start Time). Example: ATM_20%_09.17, PRM70_25%_09.30.
+    """
+    strike_tokens: list[str] = []
+    for leg in legs:
+        token = _strike_name_token(leg)
+        if token and token not in strike_tokens:
+            strike_tokens.append(token)
+    sl_tokens: list[str] = []
+    for leg in legs:
+        if leg.stoploss_pct is None:
+            continue
+        token = f"{leg.stoploss_pct:g}%"
+        if token not in sl_tokens:
+            sl_tokens.append(token)
+    if entry_time is None:
+        clock = "??.??"
+    else:
+        hour, minute = entry_time
+        clock = f"{hour:02d}.{minute:02d}"
+    parts = ["-".join(strike_tokens) if strike_tokens else "STRIKE"]
+    if sl_tokens:
+        parts.append("-".join(sl_tokens))
+    parts.append(clock)
+    return "_".join(parts)
+
 
 def _format_time(hm: tuple[int, int] | None) -> str | None:
+    """mtQuant Start/SqOff are the AlgoTest clock time minus one second.
+
+    A 09:17 entry is typed as 09:16:59, and a 14:45 exit as 14:44:59. AlgoTest
+    only stores hour and minute, so this is always HH:MM:00 minus one second.
+    """
     if hm is None:
         return None
     hour, minute = hm
-    return f"{hour:02d}:{minute:02d}:00"
+    total = hour * 3600 + minute * 60
+    if total <= 0:
+        return None
+    total -= 1
+    hour, rem = divmod(total, 3600)
+    minute, second = divmod(rem, 60)
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
 
 
 def _run_on_days(weekdays: dict[str, bool]) -> list[str]:
@@ -124,13 +197,39 @@ def _momentum_to_wait_trade(momentum: dict) -> tuple[str | None, str | None]:
     kind, value = momentum["type"], momentum["value"]
     if kind == "PercentageDown":
         return f"-{value}%", None
+    # Percent-up is an unsigned percent. Confirmed by the user: 5% up is "5%",
+    # 5% down is "-5%". The plus sign is not typed.
     if kind == "PercentageUp":
-        return f"+{value}%", "PercentageUp sign convention inferred by symmetry with the doc's PercentageDown example, not independently confirmed"
+        return f"{value}%", None
     if kind == "UnderlyingPointsDown":
         return f"-{value}", None
     if kind == "UnderlyingPointsUp":
         return f"+{value}", "UnderlyingPointsUp sign convention inferred by symmetry with the doc's PercentageDown example, not independently confirmed"
     return None, f"unrecognized Momentum type {kind!r} - not mapped to Wait & Trade"
+
+
+def strike_label(ce_pe: str, strike_mode: str, symbol: str) -> tuple[str | None, str | None]:
+    """AlgoTest OTM/ITM offsets as mtQuant's ATM±points label.
+
+    CE OTM moves up (NIFTY OTM1 = ATM+50, OTM2 = ATM+100) and CE ITM moves
+    down. PE is the opposite: PE OTM1 = ATM-50, PE ITM1 = ATM+50.
+    """
+    if strike_mode == "PREMIUM":
+        return None, None
+    if strike_mode == "ATM":
+        return "ATM", None
+    kind = strike_mode[:3] if strike_mode[:3] in ("OTM", "ITM") else ""
+    distance = strike_mode[3:]
+    if kind not in ("OTM", "ITM") or not distance.isdigit() or int(distance) < 1:
+        return None, f"unrecognized strike {strike_mode!r} - not converted to an ATM± offset"
+    step = STRIKE_STEPS.get(symbol)
+    if step is None:
+        return None, f"no strike step known for symbol {symbol!r} - can't convert {strike_mode} to ATM±"
+    points = int(distance) * step
+    # CE: OTM is above ATM, ITM is below. PE swaps those directions.
+    positive = (ce_pe == "CE" and kind == "OTM") or (ce_pe == "PE" and kind == "ITM")
+    sign = "+" if positive else "-"
+    return f"ATM{sign}{points}", None
 
 
 def build_premium_selection(target_premium: float) -> dict:
@@ -160,8 +259,10 @@ class LegPlan:
     expiry: str
     strike_mode: str  # "ATM" | "OTM<n>" | "ITM<n>" | "PREMIUM"
     strike_value: Any  # the ATM/OTM/ITM label itself, or the numeric premium for "PREMIUM"
+    strike_label: str | None  # "ATM" / "ATM+50" / "ATM-100" once the symbol's strike step is known
     premium_selection: dict | None  # set iff strike_mode == "PREMIUM" - see build_premium_selection()
     stoploss_pct: float | None
+    stoploss_text: str | None  # what gets typed into SL Value, e.g. "15%"
     target_value: float | None
     trail_sl: dict | None  # {"instrument_move": ..., "stoploss_move": ...} | None
     wait_trade: str | None  # mtQuant's signed "Wait & Trade" value (e.g. "-5%"), translated from Momentum
@@ -169,6 +270,7 @@ class LegPlan:
     reentry_kind: str | None  # "AtCost" | "NextLeg" | None
     reentry_count: int | None  # for AtCost
     reentry_target_leg_id: str | None  # for NextLeg - the idle leg id it promotes
+    on_sl_action: str | None = None  # "Execute_Leg3" once the grid row of the lazy partner is known
     notes: list[str] = field(default_factory=list)
 
     @classmethod
@@ -237,8 +339,10 @@ class LegPlan:
             expiry=leg.expiry_kind,
             strike_mode=strike_mode,
             strike_value=strike_value,
+            strike_label=None,  # filled in build_portfolio_plan, which knows the symbol
             premium_selection=premium_selection,
             stoploss_pct=stoploss_pct,
+            stoploss_text=f"{stoploss_pct:g}%" if stoploss_pct is not None else None,
             target_value=target_value,
             trail_sl=trail_sl,
             wait_trade=wait_trade,
@@ -269,6 +373,9 @@ class MTQuantPortfolioPlan:
     run_on_days: list[str]
     start_time: str | None
     sqoff_time: str | None  # AlgoTest's ExitIndicators - confirmed maps to mtQuant's SqOff Time, not End Time (see module docstring)
+    entry_path: str  # "premium" (Add Leg) | "predefined" (Short Straddle / Short Strangle)
+    predefined_strategy: str | None  # "ShortStraddle" | "ShortStrangle" | None
+    sl_wait_seconds: int
     legs: list[LegPlan]  # live legs, in ListOfLegConfigs order
     idle_legs: list[LegPlan]  # promoted only via a NextLeg re-entry
     overall_stoploss: dict | None
@@ -294,6 +401,34 @@ class MTQuantPortfolioPlan:
         return out
 
 
+def grid_rows(plan: MTQuantPortfolioPlan) -> list[LegPlan]:
+    """Leg-grid order: the live legs first, then the lazy (idle) legs.
+
+    mtQuant numbers that grid from 1, so the third row is Execute_Leg3.
+    """
+    return [*plan.legs, *plan.idle_legs]
+
+
+def execute_leg_name(rows: list[LegPlan], leg: LegPlan) -> str:
+    """The On Stoploss action that runs this leg's lazy partner.
+
+    CE is tied to the CE lazy leg and PE to the PE lazy leg, by the id
+    already stored on the NextLeg re-entry. The number is that partner's
+    1-based row in `rows` (live legs, then lazy legs).
+    """
+    if leg.reentry_kind != "NextLeg" or not leg.reentry_target_leg_id:
+        raise ValueError(f"leg {leg.leg_id} has no lazy-leg reference")
+    for index, candidate in enumerate(rows, start=1):
+        if candidate.leg_id != leg.reentry_target_leg_id:
+            continue
+        if candidate.ce_pe != leg.ce_pe:
+            raise ValueError(
+                f"leg {leg.leg_id} is {leg.ce_pe} but its lazy leg {candidate.leg_id} is {candidate.ce_pe}"
+            )
+        return f"Execute_Leg{index}"
+    raise ValueError(f"leg {leg.leg_id} points at lazy leg {leg.reentry_target_leg_id!r}, which is not in the grid")
+
+
 def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
     notes: list[str] = list(strategy.unmapped_notes)  # carry the parser's own flags forward
 
@@ -305,6 +440,40 @@ def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
 
     live_legs = [LegPlan.from_algtst_leg(leg, idle=False) for leg in strategy.legs]
     idle_legs = [LegPlan.from_algtst_leg(leg, idle=True) for leg in strategy.idle_legs.values()]
+    for leg in (*live_legs, *idle_legs):
+        label, strike_note = strike_label(leg.ce_pe, leg.strike_mode, strategy.ticker)
+        leg.strike_label = label
+        if strike_note:
+            leg.notes.append(strike_note)
+    rows = [*live_legs, *idle_legs]
+    for leg in rows:
+        if leg.reentry_kind != "NextLeg":
+            continue
+        try:
+            leg.on_sl_action = execute_leg_name(rows, leg)
+        except ValueError as exc:
+            leg.notes.append(str(exc))
+
+    premium_legs = [leg for leg in live_legs if leg.strike_mode == "PREMIUM"]
+    strike_legs = [leg for leg in live_legs if leg.strike_mode not in ("PREMIUM", "UNKNOWN")]
+    if premium_legs and strike_legs:
+        notes.append("mixes premium-based and ATM/OTM legs - mtQuant needs one entry path per portfolio")
+        entry_path = "premium"
+        predefined = None
+    elif premium_legs or not strike_legs:
+        entry_path = "premium"
+        predefined = None
+    elif all(leg.strike_mode == "ATM" for leg in strike_legs):
+        entry_path = "predefined"
+        predefined = "ShortStraddle"
+    else:
+        entry_path = "predefined"
+        predefined = "ShortStrangle"
+
+    if strategy.entry_time is not None and _format_time(strategy.entry_time) is None:
+        notes.append("entry time is 00:00 - can't subtract one second into the previous day")
+    if strategy.exit_time is not None and _format_time(strategy.exit_time) is None:
+        notes.append("exit time is 00:00 - can't subtract one second into the previous day")
 
     # These four have no named mtQuant field (confirmed via its own doc) because mtQuant's
     # default behavior already matches them AT THEIR DEFAULT VALUE (see module docstring) -
@@ -325,7 +494,7 @@ def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
 
     return MTQuantPortfolioPlan(
         source_strategy_id=strategy.strategy_id,
-        portfolio_name=strategy.name,
+        portfolio_name=portfolio_save_name(live_legs, strategy.entry_time),
         symbol=strategy.ticker,
         expiry=strategy.legs[0].expiry_kind if strategy.legs else "",
         underlying="Spot" if strategy.take_underlying_from_cash else "Future",
@@ -334,6 +503,9 @@ def build_portfolio_plan(strategy: AlgtstStrategy) -> MTQuantPortfolioPlan:
         run_on_days=_run_on_days(strategy.weekdays),
         start_time=_format_time(strategy.entry_time),
         sqoff_time=_format_time(strategy.exit_time),
+        entry_path=entry_path,
+        predefined_strategy=predefined,
+        sl_wait_seconds=SL_WAIT_SECONDS,
         legs=live_legs,
         idle_legs=idle_legs,
         overall_stoploss=strategy.overall_sl,
